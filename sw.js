@@ -43,12 +43,14 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
 	if (new URL(event.request.url).origin !== location.origin) return;
 	event.respondWith(
-		caches.keys()
-			.then(keys => {
-				const matching = keys.filter(key => key.startsWith(CACHE_NAME_PREFIX)).sort();
-				return matching.length ? matching[matching.length - 1] : "";
-			})
-			.then(name => name ? caches.open(name) : null)
-			.then(cache => cache ? cache.match(event.request).then(match => match || fetch(event.request)) : fetch(event.request))
+		fetch(event.request)
+			.catch(() => caches.keys()
+				.then(keys => {
+					const matching = keys.filter(key => key.startsWith(CACHE_NAME_PREFIX)).sort();
+					return matching.length ? matching[matching.length - 1] : "";
+				})
+				.then(name => name ? caches.open(name) : null)
+				.then(cache => cache ? cache.match(event.request) : null)
+				.then(match => match || Response.error()))
 	);
 });

@@ -20,6 +20,32 @@ Fastest options:
 - GitHub Pages: push the files to a repository, then set Pages to deploy from the repository root.
 - Azure Static Website/Static Web Apps: upload these files the same way the Bird export is hosted.
 
+For the current GitHub repo, the runnable Pages URL should be:
+
+```text
+https://adamkepecs.github.io/shakeout/
+```
+
+Do not use the `https://github.com/adamkepecs/shakeout` repository page as the play URL; that page only shows source files. The Pages site must include every file and folder from this directory, especially:
+
+```text
+index.html
+style.css
+config.json
+appmanifest.json
+offline.json
+sw.js
+icons/icon.svg
+scripts/main.js
+scripts/project/messaging.js
+scripts/modernjscheck.js
+scripts/offlineclient.js
+scripts/register-sw.js
+scripts/supportcheck.js
+```
+
+If `https://adamkepecs.github.io/shakeout/scripts/main.js` returns a GitHub Pages 404, the `scripts/` folder did not get uploaded and the game shell will appear but will not run correctly.
+
 Phone motion sensors generally require HTTPS, and iOS requires the motion permission request to happen from a user tap. Public hosts like Netlify, GitHub Pages, Azure Static Web Apps, and Cloudflare Pages provide HTTPS by default.
 
 ## Study knobs
