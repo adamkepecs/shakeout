@@ -1,0 +1,283 @@
+:root {
+	--ink: #18212b;
+	--muted: #59636f;
+	--paper: #fff8eb;
+	--panel: rgba(255, 251, 242, 0.95);
+	--line: rgba(24, 33, 43, 0.14);
+	--accent: #0f9b8e;
+	--accent-dark: #0a6f68;
+	--gold: #e3a72f;
+	--danger: #b84535;
+	--good: #2f8c55;
+	--shadow: 0 18px 40px rgba(24, 33, 43, 0.18);
+	font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background: #f6f1e6;
+	color: var(--ink);
+	touch-action: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+button {
+	font: inherit;
+	letter-spacing: 0;
+}
+
+.app {
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
+	background: #f6f1e6;
+}
+
+#gameCanvas {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
+.hud {
+	position: absolute;
+	top: env(safe-area-inset-top, 0);
+	left: 0;
+	right: 0;
+	display: grid;
+	grid-template-columns: minmax(92px, max-content) auto;
+	justify-content: space-between;
+	gap: 8px;
+	align-items: center;
+	padding: 12px;
+	box-sizing: border-box;
+	pointer-events: none;
+}
+
+.hud > div,
+.iconTextButton {
+	min-height: 48px;
+	box-sizing: border-box;
+	border: 1px solid var(--line);
+	background: rgba(255, 251, 242, 0.82);
+	backdrop-filter: blur(12px);
+	border-radius: 8px;
+	padding: 7px 10px;
+	box-shadow: 0 6px 18px rgba(24, 33, 43, 0.08);
+}
+
+.hud .coinCounter {
+	justify-self: start;
+	min-width: 92px;
+}
+
+.hud .diagnostic {
+	display: none;
+}
+
+.label {
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+}
+
+.hudValue {
+	font-size: 18px;
+	line-height: 1.15;
+	font-weight: 800;
+	white-space: nowrap;
+}
+
+.iconTextButton,
+.primaryButton,
+.secondaryButton,
+.ghostButton {
+	border: 0;
+	cursor: pointer;
+	pointer-events: auto;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.iconTextButton {
+	color: white;
+	background: var(--danger);
+	min-width: 92px;
+	padding: 0 18px;
+	font-weight: 800;
+}
+
+.panel {
+	position: absolute;
+	left: 12px;
+	right: 12px;
+	bottom: calc(12px + env(safe-area-inset-bottom, 0));
+	box-sizing: border-box;
+	padding: 16px;
+	border: 1px solid var(--line);
+	background: var(--panel);
+	box-shadow: var(--shadow);
+	border-radius: 8px;
+	backdrop-filter: blur(16px);
+}
+
+.panel.compact {
+	padding: 12px;
+}
+
+.panel.hidden,
+.hidden {
+	display: none !important;
+}
+
+.kicker {
+	color: var(--accent-dark);
+	font-size: 12px;
+	font-weight: 900;
+	text-transform: uppercase;
+}
+
+h1 {
+	margin: 3px 0 6px;
+	font-size: 26px;
+	line-height: 1.05;
+	letter-spacing: 0;
+}
+
+p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 15px;
+	line-height: 1.35;
+}
+
+.meter {
+	display: none;
+}
+
+.meter span {
+	display: block;
+	width: 0%;
+	height: 100%;
+	background: var(--accent);
+	transition: width 160ms ease;
+}
+
+.sampleDots {
+	display: grid;
+	grid-template-columns: repeat(8, 1fr);
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+.sampleDots i {
+	display: block;
+	height: 8px;
+	border-radius: 999px;
+	background: rgba(24, 33, 43, 0.14);
+}
+
+.sampleDots i.on {
+	background: var(--gold);
+}
+
+.actions {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.primaryButton,
+.secondaryButton,
+.ghostButton {
+	min-height: 48px;
+	border-radius: 8px;
+	padding: 0 14px;
+	font-weight: 900;
+}
+
+.primaryButton {
+	color: white;
+	background: var(--accent);
+	box-shadow: 0 8px 22px rgba(15, 155, 142, 0.22);
+}
+
+.secondaryButton {
+	color: var(--ink);
+	background: #f0e5d2;
+}
+
+.ghostButton {
+	width: 100%;
+	margin-top: 8px;
+	color: var(--accent-dark);
+	background: transparent;
+	border: 1px solid var(--line);
+}
+
+.statusLine {
+	min-height: 17px;
+	margin-top: 10px;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.35;
+}
+
+#notSupportedWrap {
+	margin: 2em auto 1em auto;
+	width: 75%;
+	max-width: 45em;
+	border: 2px solid #aaa;
+	border-radius: 8px;
+	padding: 2em;
+	background-color: #f0f0f0;
+	font-family: "Segoe UI", Frutiger, "Frutiger Linotype", "Dejavu Sans", "Helvetica Neue", Arial, sans-serif;
+	color: black;
+}
+
+#notSupportedTitle {
+	font-size: 1.8em;
+}
+
+.notSupportedMessage {
+	font-size: 1.2em;
+}
+
+@media (max-width: 480px) {
+	.hud {
+		gap: 6px;
+		padding: 8px;
+	}
+
+	.hud > div,
+	.iconTextButton {
+		min-height: 44px;
+		padding: 6px 8px;
+	}
+
+	.hudValue {
+		font-size: 16px;
+	}
+
+	.panel {
+		left: 8px;
+		right: 8px;
+		bottom: calc(8px + env(safe-area-inset-bottom, 0));
+	}
+
+	h1 {
+		font-size: 23px;
+	}
+
+	p {
+		font-size: 14px;
+	}
+}

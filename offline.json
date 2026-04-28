@@ -1,0 +1,19 @@
+{
+	"version": 1745746500,
+	"fileList": [
+		"index.html",
+		"style.css",
+		"config.json",
+		"appmanifest.json",
+		"offline.json",
+		"sw.js",
+		"icons/icon.svg",
+		"scripts/modernjscheck.js",
+		"scripts/supportcheck.js",
+		"scripts/offlineclient.js",
+		"scripts/register-sw.js",
+		"scripts/main.js",
+		"scripts/project/messaging.js"
+	],
+	"lazyLoad": []
+}

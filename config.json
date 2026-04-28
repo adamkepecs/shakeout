@@ -1,0 +1,57 @@
+{
+	"appVersion": "0.1.0",
+	"calibrationVersion": "calibration-low-threshold-rank3-v1",
+	"theme": "glass-jar-river-rocks",
+	"participantIdParamNames": ["participantId", "subjectId", "pid"],
+	"schedule": {
+		"startRatio": 1,
+		"growthBase": 2,
+		"maxCoins": 12,
+		"rounding": "round",
+		"explicitRatios": []
+	},
+	"tutorial": {
+		"ratios": [1, 2, 4]
+	},
+	"motion": {
+		"calibrationSamplesRequired": 8,
+		"calibrationLowFloorDps": 55,
+		"calibrationRankIndex": 2,
+		"calibrationThresholdMultiplier": 0.8,
+		"minimumThresholdDps": 45,
+		"maximumThresholdDps": 420,
+		"neutralReturnRatio": 0.42,
+		"neutralReturnFloorDps": 24,
+		"minimumGestureMs": 60,
+		"maximumGestureMs": 900,
+		"debounceMs": 360,
+		"invalidLogCooldownMs": 550,
+		"weakMovementFloorDps": 22,
+		"sensorWarmupMs": 1800,
+		"sensorLossMs": 5000
+	},
+	"session": {
+		"idleWarningSeconds": 30,
+		"idleTimeoutSeconds": 90,
+		"endOnMaxCoins": true
+	},
+	"feedback": {
+		"validVibrateMs": 20,
+		"coinVibratePattern": [35, 40, 75],
+		"idleWarningVibrateMs": 45,
+		"soundEnabled": true
+	},
+	"backend": {
+		"url": "",
+		"method": "POST",
+		"headers": {
+			"Content-Type": "application/json"
+		},
+		"sendOnceAfterSession": true
+	},
+	"debug": {
+		"allowKeyboardFlicks": true,
+		"showSimulateButton": false,
+		"logToConsole": true
+	}
+}

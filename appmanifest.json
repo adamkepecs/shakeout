@@ -1,0 +1,17 @@
+{
+	"name": "Shake-Out",
+	"short_name": "Shake-Out",
+	"description": "A calibrated progressive-ratio jar-shaking task.",
+	"start_url": "index.html",
+	"display": "fullscreen",
+	"orientation": "portrait",
+	"background_color": "#f6f1e6",
+	"theme_color": "#f6f1e6",
+	"icons": [
+		{
+			"src": "icons/icon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml"
+		}
+	]
+}

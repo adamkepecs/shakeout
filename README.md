@@ -1,0 +1,43 @@
+# Shake-Out
+
+Self-contained mobile web prototype for a calibrated progressive-ratio jar-shaking task.
+
+## Run locally
+
+```sh
+python3 -m http.server 4173 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:4173/`.
+
+## Put it on a public URL
+
+This is a static site. Upload the whole folder as-is, with `index.html` at the site root.
+
+Fastest options:
+
+- Netlify Drop: drag this `shake-out` folder into Netlify Drop. No build command is needed.
+- GitHub Pages: push the files to a repository, then set Pages to deploy from the repository root.
+- Azure Static Website/Static Web Apps: upload these files the same way the Bird export is hosted.
+
+Phone motion sensors generally require HTTPS, and iOS requires the motion permission request to happen from a user tap. Public hosts like Netlify, GitHub Pages, Azure Static Web Apps, and Cloudflare Pages provide HTTPS by default.
+
+## Study knobs
+
+Edit `config.json`:
+
+- `schedule.startRatio`, `schedule.growthBase`, `schedule.maxCoins`, and `schedule.explicitRatios`
+- `motion.calibrationSamplesRequired`, `motion.calibrationRankIndex`, and threshold multipliers
+- `session.idleWarningSeconds`, `session.idleTimeoutSeconds`, and `session.endOnMaxCoins`
+- `backend.url` for the once-per-session JSON POST
+
+The default measured schedule is `1, 2, 4, 8, ...` for 12 coins. The demo schedule is `1, 2, 4` and is logged but excluded from primary outcomes.
+
+## Runtime behavior
+
+- iOS motion permission is requested from a user tap.
+- Android/browser sensor absence is detected after warmup and reported in-app.
+- React Native WebView communication follows the Bird-style batched `postMessage` events.
+- Session payloads are posted once after session end. If no backend is configured, they are stored in `localStorage` under `shakeOutLastPayload` and `shakeOutPendingPayloads`.
+
+Primary breakpoint is `outcomes.finalBreakpoint`, with unfinished progress preserved as `outcomes.unfinishedFlicks` of `outcomes.unfinishedRatio`.
