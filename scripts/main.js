@@ -34,6 +34,16 @@ function formatRatio(n) {
 	return String(Math.round(n));
 }
 
+function percentile(values, q) {
+	if (!values.length) return 0;
+	const sorted = values.slice().sort((a, b) => a - b);
+	const index = clamp((sorted.length - 1) * q, 0, sorted.length - 1);
+	const lower = Math.floor(index);
+	const upper = Math.ceil(index);
+	if (lower === upper) return sorted[lower];
+	return lerp(sorted[lower], sorted[upper], index - lower);
+}
+
 function roundedRect(ctx, x, y, w, h, radius) {
 	if (ctx.roundRect) {
 		ctx.roundRect(x, y, w, h, radius);
@@ -157,6 +167,7 @@ class MotionClassifier {
 		this.callbacks = callbacks;
 		this.mode = "idle";
 		this.threshold = config.motion.minimumThresholdDps;
+		this.calibrationThreshold = config.motion.calibrationLowFloorDps;
 		this.candidate = null;
 		this.cooldownUntil = 0;
 		this.lastWeakLogMs = 0;
@@ -169,6 +180,10 @@ class MotionClassifier {
 		this.mode = mode;
 		this.candidate = null;
 		this.cooldownUntil = 0;
+	}
+
+	setCalibrationThreshold(threshold) {
+		this.calibrationThreshold = clamp(threshold, this.config.calibrationLowFloorDps, this.config.maximumThresholdDps);
 	}
 
 	setThreshold(threshold) {
@@ -209,9 +224,7 @@ class MotionClassifier {
 			this.lastAccel = { x: ax, y: ay, z: az };
 		}
 
-		this.sensorSeen = true;
-		this.lastMotionMs = now;
-		this.processVector(vector, {
+		const sample = {
 			source: "sensor",
 			alpha,
 			beta,
@@ -222,15 +235,24 @@ class MotionClassifier {
 			accelerationDelta,
 			jerkVelocity,
 			usedFallback
+		};
+		this.sensorSeen = true;
+		this.lastMotionMs = now;
+		if (this.callbacks.onMotionSample) this.callbacks.onMotionSample({
+			ms: now,
+			score: vector,
+			features: sample
 		});
+		this.processVector(vector, sample);
 	}
 
 	processVector(vector, features) {
 		const now = performance.now();
 		if (this.mode === "idle") return;
+		if (this.mode === "baseline") return;
 		if (now < this.cooldownUntil) return;
 
-		const activeThreshold = this.mode === "calibration" ? this.config.calibrationLowFloorDps : this.threshold;
+		const activeThreshold = this.mode === "calibration" ? this.calibrationThreshold : this.threshold;
 		const neutralThreshold = this.getNeutralThreshold(activeThreshold);
 
 		if (!this.candidate) {
@@ -348,6 +370,7 @@ class ShakeOutApp {
 
 		this.audio = new AudioFeedback(config);
 		this.classifier = new MotionClassifier(config, {
+			onMotionSample: sample => this.onMotionSample(sample),
 			onCalibrationSample: result => this.onCalibrationSample(result),
 			onValid: result => this.onValidFlick(result),
 			onInvalid: result => this.onInvalidMovement(result)
@@ -369,6 +392,10 @@ class ShakeOutApp {
 		this.lastFrameMs = performance.now();
 
 		this.calibrationSamples = [];
+		this.baselineSamples = [];
+		this.baseline = null;
+		this.baselineTimer = null;
+		this.calibrationCooldownTimer = null;
 		this.calibration = null;
 		this.events = [];
 		this.schedule = buildSchedule(config);
@@ -412,6 +439,13 @@ class ShakeOutApp {
 			const dot = document.createElement("i");
 			this.sampleDots.appendChild(dot);
 		}
+	}
+
+	clearCalibrationTimers() {
+		clearTimeout(this.baselineTimer);
+		clearTimeout(this.calibrationCooldownTimer);
+		this.baselineTimer = null;
+		this.calibrationCooldownTimer = null;
 	}
 
 	bindEvents() {
@@ -562,7 +596,7 @@ class ShakeOutApp {
 		this.sensorMode = "sensor";
 		window.addEventListener("devicemotion", this.motionListener, { passive: true });
 		this.logEvent("motion_permission_granted", { permission });
-		this.startCalibrationCollection();
+		this.startCalibrationBaseline();
 
 		setTimeout(() => {
 			if (this.screen === "calibration_collect" && !this.classifier.sensorSeen) {
@@ -579,12 +613,77 @@ class ShakeOutApp {
 		this.sensorMode = "demo";
 		this.secondaryButton.classList.add("hidden");
 		this.simulateButton.classList.remove("hidden");
-		if (this.screen === "calibration_intro") this.startCalibrationCollection();
+		if (this.screen === "calibration_intro") this.startCalibrationBaseline();
 		this.statusLine.textContent = "Demo input is active for local testing.";
 		this.logEvent("demo_input_enabled", {});
 	}
 
+	onMotionSample(sample) {
+		if (this.screen !== "calibration_baseline") return;
+		this.baselineSamples.push(sample.score);
+	}
+
+	startCalibrationBaseline() {
+		this.clearCalibrationTimers();
+		this.screen = "calibration_baseline";
+		this.phase = "calibration";
+		this.baselineSamples = [];
+		this.baseline = null;
+		this.classifier.setMode("baseline");
+		this.primaryButton.classList.add("hidden");
+		this.sampleDots.classList.add("hidden");
+		this.simulateButton.classList.add("hidden");
+		this.kicker.textContent = "Calibration";
+		this.title.textContent = "Hold still";
+		this.body.textContent = "Keep the phone upright and still for a moment. This measures hand and sensor noise before the flick samples.";
+		this.statusLine.textContent = "Measuring baseline...";
+		this.meter.style.width = "0%";
+		this.logEvent("calibration_baseline_start", {
+			durationMs: this.config.motion.baselineDurationMs
+		});
+		this.baselineTimer = setTimeout(() => this.finishCalibrationBaseline(), this.config.motion.baselineDurationMs);
+	}
+
+	finishCalibrationBaseline() {
+		if (this.screen !== "calibration_baseline") return;
+		const cfg = this.config.motion;
+		const sampleCount = this.baselineSamples.length;
+		const p50 = percentile(this.baselineSamples, 0.5);
+		const p95 = percentile(this.baselineSamples, 0.95);
+		const max = this.baselineSamples.length ? Math.max(...this.baselineSamples) : 0;
+		const captureThreshold = clamp(
+			Math.max(
+				cfg.calibrationLowFloorDps,
+				p95 * cfg.calibrationBaselineMultiplier,
+				max * cfg.calibrationBaselineMaxMultiplier
+			),
+			cfg.calibrationLowFloorDps,
+			cfg.maximumThresholdDps
+		);
+		const gameFloor = clamp(
+			Math.max(
+				cfg.minimumThresholdDps,
+				p95 * cfg.gameBaselineMultiplier,
+				captureThreshold * 1.05
+			),
+			cfg.minimumThresholdDps,
+			cfg.maximumThresholdDps
+		);
+		this.baseline = {
+			sampleCount,
+			p50Dps: Math.round(p50 * 100) / 100,
+			p95Dps: Math.round(p95 * 100) / 100,
+			maxDps: Math.round(max * 100) / 100,
+			captureThresholdDps: Math.round(captureThreshold * 100) / 100,
+			gameFloorDps: Math.round(gameFloor * 100) / 100
+		};
+		this.classifier.setCalibrationThreshold(captureThreshold);
+		this.logEvent("calibration_baseline_complete", this.baseline);
+		this.startCalibrationCollection();
+	}
+
 	startCalibrationCollection() {
+		this.clearCalibrationTimers();
 		this.screen = "calibration_collect";
 		this.phase = "calibration";
 		this.classifier.setMode("calibration");
@@ -593,7 +692,7 @@ class ShakeOutApp {
 		if (this.config.debug.showSimulateButton || this.sensorMode === "demo") this.simulateButton.classList.remove("hidden");
 		this.kicker.textContent = "Calibration";
 		this.title.textContent = "Set your flick";
-		this.body.textContent = "Hold the phone upright. Use eight small, comfortable wrist snaps; each accepted sample gives a short buzz.";
+		this.body.textContent = "Now make one small, comfortable wrist flick at a time. Pause briefly after each buzz.";
 		this.statusLine.textContent = "Collecting sample 1 of 8.";
 		this.updateCalibrationDots();
 	}
@@ -601,6 +700,7 @@ class ShakeOutApp {
 	onCalibrationSample(result) {
 		if (this.screen !== "calibration_collect") return;
 		this.calibrationSamples.push(result);
+		this.classifier.setMode("idle");
 		this.feedbackValid();
 		this.addParticles(8, "#e3a72f");
 		this.logEvent("calibration_sample", {
@@ -622,7 +722,12 @@ class ShakeOutApp {
 			this.finishCalibration();
 		}
 		else {
-			this.statusLine.textContent = `Collecting sample ${this.calibrationSamples.length + 1} of ${required}.`;
+			this.statusLine.textContent = "Good. Settle, then flick again.";
+			this.calibrationCooldownTimer = setTimeout(() => {
+				if (this.screen !== "calibration_collect") return;
+				this.classifier.setMode("calibration");
+				this.statusLine.textContent = `Collecting sample ${this.calibrationSamples.length + 1} of ${required}.`;
+			}, this.config.motion.calibrationSampleCooldownMs);
 		}
 	}
 
@@ -633,18 +738,24 @@ class ShakeOutApp {
 	}
 
 	finishCalibration() {
+		this.clearCalibrationTimers();
 		const cfg = this.config.motion;
 		const peaks = this.calibrationSamples.map(s => s.angularVelocity).sort((a, b) => a - b);
 		const rank = clamp(cfg.calibrationRankIndex, 0, peaks.length - 1);
 		const rankedPeak = peaks[rank];
-		const threshold = clamp(rankedPeak * cfg.calibrationThresholdMultiplier, cfg.minimumThresholdDps, cfg.maximumThresholdDps);
+		const sampleThreshold = rankedPeak * cfg.calibrationThresholdMultiplier;
+		const baselineFloor = this.baseline ? this.baseline.gameFloorDps : cfg.minimumThresholdDps;
+		const threshold = clamp(Math.max(sampleThreshold, baselineFloor), cfg.minimumThresholdDps, cfg.maximumThresholdDps);
 		this.calibration = {
 			version: this.config.calibrationVersion,
 			completedAt: new Date().toISOString(),
 			sampleCount: this.calibrationSamples.length,
+			baseline: this.baseline,
 			samplePeaksDps: this.calibrationSamples.map(s => Math.round(s.angularVelocity * 100) / 100),
 			rankIndex: rank,
 			rankedPeakDps: Math.round(rankedPeak * 100) / 100,
+			sampleThresholdDps: Math.round(sampleThreshold * 100) / 100,
+			baselineFloorDps: Math.round(baselineFloor * 100) / 100,
 			thresholdDps: Math.round(threshold * 100) / 100,
 			neutralReturnDps: Math.round(this.classifier.getNeutralThreshold(threshold) * 100) / 100,
 			sensorMode: this.sensorMode
@@ -722,9 +833,12 @@ class ShakeOutApp {
 	}
 
 	restartFromCalibration() {
+		this.clearCalibrationTimers();
 		this.sessionId = uuid();
 		this.events = [];
 		this.calibrationSamples = [];
+		this.baselineSamples = [];
+		this.baseline = null;
 		this.calibration = null;
 		this.completedRatios = [];
 		this.totalValidFlicks = 0;
@@ -746,7 +860,7 @@ class ShakeOutApp {
 		this.panel.classList.remove("compact", "hidden");
 		this.kicker.textContent = "Calibration";
 		this.title.textContent = "Shake the jar";
-		this.body.textContent = "Hold the phone upright and make small wrist flicks like the cue. We will set your flick threshold from eight comfortable samples.";
+		this.body.textContent = "Hold the phone upright. We will first measure stillness, then collect eight comfortable flicks.";
 		this.primaryButton.textContent = "Allow motion";
 		this.primaryButton.disabled = false;
 		this.primaryButton.classList.remove("hidden");
