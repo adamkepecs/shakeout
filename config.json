@@ -1,7 +1,7 @@
 {
-	"appVersion": "0.1.6",
+	"appVersion": "0.1.7",
 	"calibrationVersion": "baseline-guided-upright-v3",
-	"theme": "flat-candy-sand-v5",
+	"theme": "hand-drawn-rock-field-v6",
 	"participantIdParamNames": ["participantId", "subjectId", "pid"],
 	"schedule": {
 		"startRatio": 2,
