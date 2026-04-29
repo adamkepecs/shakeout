@@ -162,7 +162,7 @@ class MotionClassifier {
 		this.lastWeakLogMs = 0;
 		this.lastMotionMs = 0;
 		this.sensorSeen = false;
-		this.lastAccelMag = null;
+		this.lastAccel = null;
 	}
 
 	setMode(mode) {
@@ -185,9 +185,12 @@ class MotionClassifier {
 		const alpha = Number(rotation.alpha) || 0;
 		const beta = Number(rotation.beta) || 0;
 		const gamma = Number(rotation.gamma) || 0;
-		let vector = Math.hypot(alpha, beta, gamma);
+		const rotationVector = Math.hypot(alpha, beta, gamma);
+		let vector = rotationVector;
 		let usedFallback = false;
 		let accelerationMagnitude = 0;
+		let accelerationDelta = 0;
+		let jerkVelocity = 0;
 
 		const accel = event.accelerationIncludingGravity || event.acceleration;
 		if (accel) {
@@ -195,11 +198,15 @@ class MotionClassifier {
 			const ay = Number(accel.y) || 0;
 			const az = Number(accel.z) || 0;
 			accelerationMagnitude = Math.hypot(ax, ay, az);
-			if (vector <= 0.01) {
-				usedFallback = true;
-				if (this.lastAccelMag != null) vector = Math.abs(accelerationMagnitude - this.lastAccelMag) * 90;
-				this.lastAccelMag = accelerationMagnitude;
+			if (this.lastAccel) {
+				accelerationDelta = Math.hypot(ax - this.lastAccel.x, ay - this.lastAccel.y, az - this.lastAccel.z);
+				jerkVelocity = accelerationDelta * (this.config.accelerationJerkScaleDps || 44);
+				if (jerkVelocity > vector) {
+					vector = jerkVelocity;
+					usedFallback = true;
+				}
 			}
+			this.lastAccel = { x: ax, y: ay, z: az };
 		}
 
 		this.sensorSeen = true;
@@ -209,8 +216,11 @@ class MotionClassifier {
 			alpha,
 			beta,
 			gamma,
+			rotationVector,
 			combinedAngularVelocity: vector,
 			accelerationMagnitude,
+			accelerationDelta,
+			jerkVelocity,
 			usedFallback
 		});
 	}
@@ -252,8 +262,12 @@ class MotionClassifier {
 		}
 
 		const durationMs = now - this.candidate.startMs;
-		if (durationMs >= this.config.minimumGestureMs && vector <= neutralThreshold) {
+		const relaxedReturnThreshold = Math.max(neutralThreshold, this.candidate.peak * (this.config.relaxedReturnDropRatio || 0.84));
+		const returnedToNeutral = durationMs >= this.config.minimumGestureMs && vector <= neutralThreshold;
+		const relaxedReturn = durationMs >= (this.config.relaxedReturnAfterMs || 145) && vector <= relaxedReturnThreshold;
+		if (returnedToNeutral || relaxedReturn) {
 			const result = {
+				reason: returnedToNeutral ? "valid_returned_to_neutral" : "valid_relaxed_return",
 				amplitude: this.candidate.peak,
 				angularVelocity: this.candidate.peak,
 				durationMs,
@@ -298,8 +312,11 @@ class MotionClassifier {
 				alpha: peak,
 				beta: peak * 0.45,
 				gamma: peak * 0.25,
+				rotationVector: peak,
 				combinedAngularVelocity: peak,
 				accelerationMagnitude: 0,
+				accelerationDelta: 0,
+				jerkVelocity: 0,
 				usedFallback: false
 			}
 		};
@@ -344,6 +361,8 @@ class ShakeOutApp {
 		this.screen = "calibration_intro";
 		this.phase = "calibration";
 		this.sensorMode = "unknown";
+		this.orientationLockStatus = "not_requested";
+		this.enteredFullscreenForOrientation = false;
 		this.motionListener = event => this.classifier.processDeviceMotion(event);
 		this.visibilityListener = () => this.onVisibilityChange();
 		this.idleInterval = null;
@@ -425,6 +444,79 @@ class ShakeOutApp {
 		this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	}
 
+	async tryLockPortraitOrientation(trigger) {
+		const cfg = this.config.orientation || {};
+		if (!cfg.lockPortrait || this.orientationLockStatus === "locked") return;
+		const orientation = screen.orientation;
+		if (!orientation || typeof orientation.lock !== "function") {
+			this.orientationLockStatus = "unsupported";
+			this.logEvent("orientation_lock", { trigger, status: "unsupported" });
+			return;
+		}
+
+		let fullscreenStatus = "not_requested";
+		try {
+			if (cfg.requestFullscreenForLock && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+				await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+				this.enteredFullscreenForOrientation = true;
+				fullscreenStatus = "entered";
+			}
+		}
+		catch (err) {
+			fullscreenStatus = "failed";
+			this.logEvent("orientation_fullscreen", {
+				trigger,
+				status: fullscreenStatus,
+				error: String(err && err.message ? err.message : err)
+			});
+		}
+
+		try {
+			await orientation.lock("portrait");
+			this.orientationLockStatus = "locked";
+			this.logEvent("orientation_lock", {
+				trigger,
+				status: "locked",
+				fullscreenStatus,
+				type: orientation.type || ""
+			});
+		}
+		catch (err) {
+			this.orientationLockStatus = "failed";
+			this.logEvent("orientation_lock", {
+				trigger,
+				status: "failed",
+				fullscreenStatus,
+				error: String(err && err.message ? err.message : err)
+			});
+		}
+	}
+
+	unlockPortraitOrientation(reason) {
+		if (screen.orientation && typeof screen.orientation.unlock === "function" && this.orientationLockStatus === "locked") {
+			try {
+				screen.orientation.unlock();
+				this.logEvent("orientation_unlock", { reason, status: "unlocked" });
+			}
+			catch (err) {
+				this.logEvent("orientation_unlock", {
+					reason,
+					status: "failed",
+					error: String(err && err.message ? err.message : err)
+				});
+			}
+		}
+		this.orientationLockStatus = "not_requested";
+		if (this.enteredFullscreenForOrientation && document.fullscreenElement && document.exitFullscreen) {
+			document.exitFullscreen().catch(err => this.logEvent("orientation_fullscreen_exit", {
+				reason,
+				status: "failed",
+				error: String(err && err.message ? err.message : err)
+			}));
+			this.enteredFullscreenForOrientation = false;
+		}
+	}
+
 	onPrimary() {
 		this.audio.unlock();
 		switch (this.screen) {
@@ -432,9 +524,11 @@ class ShakeOutApp {
 				this.requestMotionAndCalibrate();
 				break;
 			case "tutorial_ready":
+				this.tryLockPortraitOrientation("tutorial_start");
 				this.startTutorial();
 				break;
 			case "session_ready":
+				this.tryLockPortraitOrientation("session_start");
 				this.startMeasuredSession();
 				break;
 			case "ended":
@@ -464,6 +558,7 @@ class ShakeOutApp {
 			return;
 		}
 
+		await this.tryLockPortraitOrientation("calibration_start");
 		this.sensorMode = "sensor";
 		window.addEventListener("devicemotion", this.motionListener, { passive: true });
 		this.logEvent("motion_permission_granted", { permission });
@@ -480,6 +575,7 @@ class ShakeOutApp {
 
 	useDemoInput() {
 		this.audio.unlock();
+		this.tryLockPortraitOrientation("demo_input");
 		this.sensorMode = "demo";
 		this.secondaryButton.classList.add("hidden");
 		this.simulateButton.classList.remove("hidden");
@@ -497,7 +593,7 @@ class ShakeOutApp {
 		if (this.config.debug.showSimulateButton || this.sensorMode === "demo") this.simulateButton.classList.remove("hidden");
 		this.kicker.textContent = "Calibration";
 		this.title.textContent = "Set your flick";
-		this.body.textContent = "Use eight small, comfortable wrist flicks. Each accepted sample gives a short buzz.";
+		this.body.textContent = "Hold the phone upright. Use eight small, comfortable wrist snaps; each accepted sample gives a short buzz.";
 		this.statusLine.textContent = "Collecting sample 1 of 8.";
 		this.updateCalibrationDots();
 	}
@@ -512,7 +608,12 @@ class ShakeOutApp {
 			amplitude: result.amplitude,
 			angularVelocity: result.angularVelocity,
 			gestureDurationMs: result.durationMs,
-			source: result.features.source
+			source: result.features.source,
+			rotationVector: result.features.rotationVector,
+			accelerationDelta: result.features.accelerationDelta,
+			jerkVelocity: result.features.jerkVelocity,
+			usedFallback: result.features.usedFallback,
+			classificationReason: result.reason || "calibration_sample"
 		});
 
 		this.updateCalibrationDots();
@@ -645,7 +746,7 @@ class ShakeOutApp {
 		this.panel.classList.remove("compact", "hidden");
 		this.kicker.textContent = "Calibration";
 		this.title.textContent = "Shake the jar";
-		this.body.textContent = "Make small wrist flicks like the cue. We will set your flick threshold from eight comfortable samples.";
+		this.body.textContent = "Hold the phone upright and make small wrist flicks like the cue. We will set your flick threshold from eight comfortable samples.";
 		this.primaryButton.textContent = "Allow motion";
 		this.primaryButton.disabled = false;
 		this.primaryButton.classList.remove("hidden");
@@ -713,8 +814,12 @@ class ShakeOutApp {
 			movementAmplitude: result.amplitude,
 			angularVelocity: result.angularVelocity,
 			gestureDurationMs: result.durationMs,
-			classificationReason: "valid_returned_to_neutral",
-			source: result.features.source
+			classificationReason: result.reason || "valid_returned_to_neutral",
+			source: result.features.source,
+			rotationVector: result.features.rotationVector,
+			accelerationDelta: result.features.accelerationDelta,
+			jerkVelocity: result.features.jerkVelocity,
+			usedFallback: result.features.usedFallback
 		});
 
 		if (this.validInRatio >= this.currentRatio) this.dropCoin(result);
@@ -735,7 +840,11 @@ class ShakeOutApp {
 			angularVelocity: result.angularVelocity,
 			gestureDurationMs: result.durationMs,
 			classificationReason: result.reason || "invalid",
-			source: result.features ? result.features.source : "sensor"
+			source: result.features ? result.features.source : "sensor",
+			rotationVector: result.features ? result.features.rotationVector : null,
+			accelerationDelta: result.features ? result.features.accelerationDelta : null,
+			jerkVelocity: result.features ? result.features.jerkVelocity : null,
+			usedFallback: result.features ? result.features.usedFallback : null
 		});
 	}
 
@@ -863,6 +972,7 @@ class ShakeOutApp {
 		};
 		clearInterval(this.idleInterval);
 		this.classifier.setMode("idle");
+		this.unlockPortraitOrientation(reason);
 		this.quitButton.classList.add("hidden");
 		const payload = this.buildSessionPayload(reason, unfinished);
 		this.logEvent("session_end", {

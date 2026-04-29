@@ -1,6 +1,6 @@
 {
-	"appVersion": "0.1.0",
-	"calibrationVersion": "calibration-low-threshold-rank3-v1",
+	"appVersion": "0.1.1",
+	"calibrationVersion": "calibration-upright-easy-flick-v2",
 	"theme": "glass-jar-river-rocks",
 	"participantIdParamNames": ["participantId", "subjectId", "pid"],
 	"schedule": {
@@ -15,20 +15,27 @@
 	},
 	"motion": {
 		"calibrationSamplesRequired": 8,
-		"calibrationLowFloorDps": 55,
-		"calibrationRankIndex": 2,
-		"calibrationThresholdMultiplier": 0.8,
-		"minimumThresholdDps": 45,
+		"calibrationLowFloorDps": 28,
+		"calibrationRankIndex": 1,
+		"calibrationThresholdMultiplier": 0.58,
+		"minimumThresholdDps": 24,
 		"maximumThresholdDps": 420,
-		"neutralReturnRatio": 0.42,
-		"neutralReturnFloorDps": 24,
-		"minimumGestureMs": 60,
+		"neutralReturnRatio": 0.78,
+		"neutralReturnFloorDps": 30,
+		"minimumGestureMs": 45,
 		"maximumGestureMs": 900,
-		"debounceMs": 360,
+		"relaxedReturnAfterMs": 145,
+		"relaxedReturnDropRatio": 0.84,
+		"accelerationJerkScaleDps": 44,
+		"debounceMs": 240,
 		"invalidLogCooldownMs": 550,
-		"weakMovementFloorDps": 22,
+		"weakMovementFloorDps": 12,
 		"sensorWarmupMs": 1800,
 		"sensorLossMs": 5000
+	},
+	"orientation": {
+		"lockPortrait": true,
+		"requestFullscreenForLock": true
 	},
 	"session": {
 		"idleWarningSeconds": 30,

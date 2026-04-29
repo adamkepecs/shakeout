@@ -63,6 +63,7 @@ The default measured schedule is `1, 2, 4, 8, ...` for 12 coins. The demo schedu
 
 - iOS motion permission is requested from a user tap.
 - Android/browser sensor absence is detected after warmup and reported in-app.
+- Portrait orientation lock is attempted on mobile from a user tap. Browsers may require fullscreen; installed/PWA mode is most reliable.
 - React Native WebView communication follows the Bird-style batched `postMessage` events.
 - Session payloads are posted once after session end. If no backend is configured, they are stored in `localStorage` under `shakeOutLastPayload` and `shakeOutPendingPayloads`.
 
