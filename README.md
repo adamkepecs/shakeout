@@ -58,7 +58,7 @@ Edit `config.json`:
 - `session.idleWarningSeconds`, `session.idleTimeoutSeconds`, and `session.endOnMaxCoins`
 - `backend.url` for the once-per-session JSON POST
 
-The default measured schedule is `1, 2, 4, 8, ...` for 12 coins. The demo schedule is `1, 2, 4` and is logged but excluded from primary outcomes.
+The default measured schedule is `2, 4, 6, 9, 13, 18, 23` for 7 coins. The demo schedule is `2, 4` and is logged but excluded from primary outcomes.
 
 ## Runtime behavior
 

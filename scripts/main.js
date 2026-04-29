@@ -5,6 +5,7 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 const lerp = (a, b, t) => a + (b - a) * t;
 const easeOut = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
 const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const TAU = Math.PI * 2;
 const STORAGE_KEYS = {
 	firstUseAt: "shakeOutFirstUseAt",
 	savedCalibration: "shakeOutSavedCalibration",
@@ -151,14 +152,20 @@ class AudioFeedback {
 	}
 
 	valid() {
-		this.tone(160, 0.055, "square", 0.025);
-		this.tone(470, 0.075, "triangle", 0.025, 0.025);
+		this.tone(240, 0.045, "triangle", 0.026);
+		this.tone(520, 0.06, "sine", 0.022, 0.025);
+	}
+
+	crack() {
+		this.tone(170, 0.045, "square", 0.025);
+		this.tone(780, 0.075, "triangle", 0.034, 0.018);
+		this.tone(1180, 0.05, "sine", 0.018, 0.085);
 	}
 
 	coin() {
-		this.tone(420, 0.08, "triangle", 0.04);
-		this.tone(690, 0.11, "triangle", 0.035, 0.07);
-		this.tone(980, 0.13, "sine", 0.025, 0.15);
+		this.tone(430, 0.08, "triangle", 0.04);
+		this.tone(720, 0.105, "sine", 0.035, 0.055);
+		this.tone(1060, 0.14, "sine", 0.026, 0.13);
 	}
 
 	idle() {
@@ -455,14 +462,19 @@ class ShakeOutApp {
 		this.ended = false;
 		this.postStatus = "not_sent";
 		this.coinDropping = null;
+		this.coinBody = null;
+		this.coinTrail = [];
 		this.collectedCoins = [];
 		this.countAnimation = null;
 		this.coinKickMs = 0;
 		this.jarImpulse = 0;
 		this.jarAngle = 0;
 		this.particles = [];
+		this.localEffects = [];
 		this.sand = [];
 		this.blockers = [];
+		this.brokenBlockers = new Set();
+		this.lastBlockerProgress = 0;
 		this.animationTick = 0;
 
 		this.setupDots();
@@ -934,7 +946,7 @@ class ShakeOutApp {
 		this.body.textContent = "Shake one coin through the stuck sand.";
 		this.primaryButton.classList.add("hidden");
 		this.secondaryButton.classList.add("hidden");
-		this.statusLine.textContent = "Practice with the 1, 2, 4 coin sequence.";
+		this.statusLine.textContent = `Practice with ${this.tutorialRatios.join(", ")} flick coins.`;
 		this.simulateButton.textContent = "Test flick";
 		this.simulateButton.classList.toggle("hidden", !(this.config.debug.showSimulateButton || this.sensorMode === "demo"));
 		this.resetCoin(0, this.activeRatios[0]);
@@ -1071,47 +1083,69 @@ class ShakeOutApp {
 		this.validInRatio = 0;
 		this.coinDropping = null;
 		this.coinKickMs = 0;
+		this.coinBody = this.createCoinBody(index, ratio);
+		this.coinTrail = [];
+		this.localEffects = [];
 		this.sand = this.makeSand(index, ratio);
 		this.blockers = this.makeBlockers(index, ratio);
-		this.addParticles(10, "#e8c9a7");
+		this.brokenBlockers = new Set();
+		this.lastBlockerProgress = 0;
+		this.addLocalDust(this.coinBody.x, this.coinBody.y, 10, "#f1cf72");
 		this.updateHud();
 	}
 
+	createCoinBody(index, ratio) {
+		const rand = seededRandom((index + 11) * 4073 + ratio * 83);
+		return {
+			x: 0.5 + (rand() - 0.5) * 0.08,
+			y: 0.18,
+			vx: 0,
+			vy: 0,
+			r: 0.052,
+			rotation: (rand() - 0.5) * 0.4,
+			spin: 0,
+			wakeHue: rand()
+		};
+	}
+
 	makeSand(index, ratio) {
-		const count = clamp(105 + Math.ceil(Math.log2(ratio + 1)) * 12 + index * 3, 110, 220);
+		const count = clamp(115 + index * 12 + Math.ceil(ratio * 1.8), 120, 260);
 		const rand = seededRandom((index + 3) * 1777 + ratio * 3181);
-		const colors = ["#ffd6a5", "#caffbf", "#bde0fe", "#ffc8dd", "#d7c6ff", "#fff1a8", "#b8f2e6"];
+		const colors = ["#ffdca8", "#c8f1d2", "#b9dcff", "#ffd1e0", "#d8cdf8", "#fff0a8", "#c2f2e5"];
 		const sand = [];
 		for (let i = 0; i < count; i++) {
-			const band = Math.pow(rand(), 0.82);
-			const nearPath = rand() < 0.42;
+			const band = Math.pow(rand(), 0.72);
+			const lowerPile = rand() < 0.46;
 			sand.push({
-				x: (nearPath ? 0.41 + rand() * 0.18 : 0.19 + rand() * 0.62),
-				y: 0.24 + band * 0.53,
-				r: 0.007 + rand() * 0.0085,
+				x: 0.18 + rand() * 0.64,
+				y: lowerPile ? 0.49 + Math.pow(rand(), 0.55) * 0.31 : 0.24 + band * 0.48,
+				r: 0.0045 + rand() * 0.0075,
 				color: colors[Math.floor(rand() * colors.length)],
-				wobble: rand() * 100,
-				float: rand() * 0.7 + 0.35
+				phase: rand() * TAU
 			});
 		}
 		return sand;
 	}
 
 	makeBlockers(index, ratio) {
-		const count = clamp(5 + Math.ceil(Math.log2(ratio + 1)) * 2 + Math.floor(index / 2), 5, 26);
+		const count = clamp(Math.ceil(ratio / 3.5) + Math.floor(index / 2), 1, 8);
 		const rand = seededRandom((index + 5) * 2203 + ratio * 4441);
 		const blockers = [];
 		for (let i = 0; i < count; i++) {
-			const t = count === 1 ? 0.5 : i / (count - 1);
-			const side = i % 2 === 0 ? -1 : 1;
+			const t = (i + 1) / (count + 1);
+			const laneBias = i % 2 === 0 ? -0.025 : 0.025;
+			const breakAt = clamp(0.22 + t * 0.64, 0.32, 0.9);
 			blockers.push({
-				x: 0.5 + side * (0.035 + rand() * 0.11) + (rand() - 0.5) * 0.06,
-				y: 0.31 + t * 0.43 + (rand() - 0.5) * 0.055,
-				r: 0.034 + rand() * 0.026,
-				angle: rand() * Math.PI,
-				wobble: rand() * 100,
-				color: ["#6f4932", "#7f5234", "#8f603d", "#5e3d2c"][Math.floor(rand() * 4)],
-				shape: Math.floor(rand() * 3)
+				id: `${index}-${i}`,
+				x: 0.5 + laneBias + (rand() - 0.5) * 0.035,
+				y: 0.32 + t * 0.47 + (rand() - 0.5) * 0.025,
+				w: clamp(0.28 + rand() * 0.16 + index * 0.012, 0.28, 0.48),
+				h: 0.038 + rand() * 0.024,
+				angle: (rand() - 0.5) * 0.28,
+				breakAt,
+				color: ["#7a4f34", "#6a432e", "#80563b", "#5e3d2c"][Math.floor(rand() * 4)],
+				crystal: ["#7dd3fc", "#f0abfc", "#a7f3d0", "#fde68a"][Math.floor(rand() * 4)],
+				cracks: rand()
 			});
 		}
 		return blockers;
@@ -1124,13 +1158,15 @@ class ShakeOutApp {
 		this.previousValidFlickMs = now;
 		this.lastValidFlickMs = now;
 		this.idleWarned = false;
+		const oldProgress = this.currentRatio ? clamp(this.validInRatio / this.currentRatio, 0, 1) : 0;
 		this.validInRatio += 1;
 		if (this.isMeasured) this.totalValidFlicks += 1;
 
 		const progress = clamp(this.validInRatio / this.currentRatio, 0, 1);
 		this.coinKickMs = now;
+		this.applyFlickImpulse(result, progress);
 		this.feedbackValid();
-		this.addParticles(12, "#e3a72f");
+		this.triggerBlockerBreaks(oldProgress, progress);
 		this.logEvent("valid_flick", {
 			currentCoin: this.currentCoinIndex + 1,
 			currentRatio: this.currentRatio,
@@ -1175,9 +1211,55 @@ class ShakeOutApp {
 		});
 	}
 
+	applyFlickImpulse(result, progress) {
+		if (!this.coinBody) return;
+		const coin = this.coinBody;
+		const amplitudeScale = clamp((result.angularVelocity || result.amplitude || 80) / Math.max(1, result.threshold || 80), 0.9, 1.45);
+		const alternatingSide = this.validInRatio % 2 === 0 ? -1 : 1;
+		const pathNudge = coin.x < 0.5 ? 1 : -1;
+		const impulseY = 0.62 + progress * 0.16;
+		const impulseX = (0.14 * alternatingSide + 0.08 * pathNudge) * amplitudeScale;
+		coin.vx += impulseX;
+		coin.vy += impulseY;
+		coin.spin += impulseX * 2.6 + alternatingSide * 0.18;
+		this.addCoinStream(coin.x, coin.y, 12, progress);
+	}
+
+	getBlockerDamage(block, progress) {
+		return clamp((progress - block.breakAt + 0.16) / 0.24, 0, 1);
+	}
+
+	isBlockerSolid(block, progress) {
+		return progress < block.breakAt && !this.brokenBlockers.has(block.id);
+	}
+
+	triggerBlockerBreaks(oldProgress, progress) {
+		for (const block of this.blockers) {
+			if (oldProgress < block.breakAt && progress >= block.breakAt && !this.brokenBlockers.has(block.id)) {
+				this.brokenBlockers.add(block.id);
+				this.feedbackBreak();
+				this.addBreakBurst(block);
+				this.logEvent("frozen_sand_break", {
+					currentCoin: this.currentCoinIndex + 1,
+					currentRatio: this.currentRatio,
+					breakAtProgress: block.breakAt,
+					progressTowardCurrentCoin: progress,
+					blockerId: block.id
+				});
+			}
+		}
+		this.lastBlockerProgress = progress;
+	}
+
 	dropCoin(result) {
 		const now = performance.now();
 		if (this.isMeasured) this.completedRatios.push(this.currentRatio);
+		if (this.coinBody) {
+			this.coinBody.x = 0.5;
+			this.coinBody.y = 0.86;
+			this.coinBody.vx = 0;
+			this.coinBody.vy = 0;
+		}
 		const from = this.getMouthPoint(now);
 		const to = this.getPileTarget(this.collectedCoins.length);
 		this.coinDropping = {
@@ -1445,6 +1527,11 @@ class ShakeOutApp {
 		this.audio.valid();
 	}
 
+	feedbackBreak() {
+		if (navigator.vibrate) navigator.vibrate([18, 28, 22]);
+		this.audio.crack();
+	}
+
 	feedbackCoin() {
 		this.jarImpulse = Math.max(this.jarImpulse, 1.4);
 		if (navigator.vibrate) navigator.vibrate(this.config.feedback.coinVibratePattern);
@@ -1469,6 +1556,58 @@ class ShakeOutApp {
 				life: 0.5 + Math.random() * 0.55,
 				maxLife: 0.9,
 				color
+			});
+		}
+	}
+
+	addCoinStream(x, y, count, progress) {
+		const colors = progress > 0.68 ? ["#fef08a", "#a7f3d0", "#93c5fd", "#f0abfc"] : ["#fde68a", "#bfdbfe", "#fecdd3"];
+		for (let i = 0; i < count; i++) {
+			this.localEffects.push({
+				type: "stream",
+				x: x + (Math.random() - 0.5) * 0.05,
+				y: y + (Math.random() - 0.5) * 0.035,
+				vx: (Math.random() - 0.5) * 0.1,
+				vy: -0.04 - Math.random() * 0.12,
+				r: 0.008 + Math.random() * 0.012,
+				life: 0.42 + Math.random() * 0.22,
+				maxLife: 0.65,
+				color: colors[Math.floor(Math.random() * colors.length)]
+			});
+		}
+	}
+
+	addLocalDust(x, y, count, color) {
+		for (let i = 0; i < count; i++) {
+			this.localEffects.push({
+				type: "dust",
+				x: x + (Math.random() - 0.5) * 0.08,
+				y: y + (Math.random() - 0.5) * 0.05,
+				vx: (Math.random() - 0.5) * 0.08,
+				vy: (Math.random() - 0.5) * 0.08,
+				r: 0.005 + Math.random() * 0.008,
+				life: 0.32 + Math.random() * 0.24,
+				maxLife: 0.6,
+				color
+			});
+		}
+	}
+
+	addBreakBurst(block) {
+		const colors = [block.crystal, "#fff7ed", "#fef08a", "#f9a8d4"];
+		for (let i = 0; i < 26; i++) {
+			this.localEffects.push({
+				type: "shard",
+				x: block.x + (Math.random() - 0.5) * block.w * 0.8,
+				y: block.y + (Math.random() - 0.5) * block.h * 2,
+				vx: (Math.random() - 0.5) * 0.42,
+				vy: -0.24 - Math.random() * 0.42,
+				r: 0.006 + Math.random() * 0.012,
+				angle: Math.random() * TAU,
+				spin: (Math.random() - 0.5) * 8,
+				life: 0.62 + Math.random() * 0.36,
+				maxLife: 1,
+				color: colors[Math.floor(Math.random() * colors.length)]
 			});
 		}
 	}
@@ -1523,7 +1662,9 @@ class ShakeOutApp {
 
 	updateAnimation(dt, ms) {
 		this.jarImpulse = Math.max(0, this.jarImpulse - dt * 2.6);
-		this.jarAngle = Math.sin(ms / 55) * this.jarImpulse * 0.09;
+		this.jarAngle = 0;
+		this.updateCoinPhysics(dt, ms);
+		this.updateLocalEffects(dt);
 		for (const particle of this.particles) {
 			particle.life -= dt;
 			particle.x += particle.vx * dt;
@@ -1541,6 +1682,119 @@ class ShakeOutApp {
 		}
 	}
 
+	updateCoinPhysics(dt, ms) {
+		if (!this.coinBody || this.coinDropping || this.ended || this.screen !== "playing") return;
+		const coin = this.coinBody;
+		const progress = this.currentRatio ? clamp(this.validInRatio / this.currentRatio, 0, 1) : 0;
+		const stepCount = 2;
+		const step = dt / stepCount;
+		for (let i = 0; i < stepCount; i++) {
+			coin.vy += 0.28 * step;
+			const drag = Math.pow(0.08, step);
+			coin.vx *= drag;
+			coin.vy *= Math.pow(0.1, step);
+			coin.spin *= Math.pow(0.18, step);
+			coin.x += coin.vx * step;
+			coin.y += coin.vy * step;
+			coin.rotation += coin.spin * step;
+			this.resolveCoinWalls(coin);
+			this.resolveCoinBlockers(coin, progress, ms);
+		}
+
+		if (!this.coinTrail.length || ms - this.coinTrail[this.coinTrail.length - 1].ms > 38) {
+			this.coinTrail.push({
+				x: coin.x,
+				y: coin.y,
+				rotation: coin.rotation,
+				ms,
+				life: 0.42,
+				maxLife: 0.42
+			});
+		}
+		for (const trail of this.coinTrail) trail.life -= dt;
+		this.coinTrail = this.coinTrail.filter(t => t.life > 0);
+	}
+
+	resolveCoinWalls(coin) {
+		const top = 0.13;
+		const bottom = 0.86;
+		if (coin.y - coin.r < top) {
+			coin.y = top + coin.r;
+			coin.vy = Math.abs(coin.vy) * 0.42;
+		}
+		if (coin.y + coin.r > bottom) {
+			coin.y = bottom - coin.r;
+			coin.vy = -Math.abs(coin.vy) * 0.38;
+			coin.vx += (0.5 - coin.x) * 0.35;
+		}
+
+		const bounds = this.getBottleInnerBounds(coin.y);
+		if (coin.x - coin.r < bounds.left) {
+			coin.x = bounds.left + coin.r;
+			coin.vx = Math.abs(coin.vx) * 0.46;
+			coin.spin += 0.8;
+		}
+		if (coin.x + coin.r > bounds.right) {
+			coin.x = bounds.right - coin.r;
+			coin.vx = -Math.abs(coin.vx) * 0.46;
+			coin.spin -= 0.8;
+		}
+	}
+
+	resolveCoinBlockers(coin, progress, ms) {
+		for (const block of this.blockers) {
+			if (!this.isBlockerSolid(block, progress)) continue;
+			const cos = Math.cos(-block.angle);
+			const sin = Math.sin(-block.angle);
+			const dx = coin.x - block.x;
+			const dy = coin.y - block.y;
+			const lx = dx * cos - dy * sin;
+			const ly = dx * sin + dy * cos;
+			const rx = block.w * 0.5 + coin.r * 0.78;
+			const ry = block.h * 0.95 + coin.r * 0.56;
+			const norm = (lx / rx) ** 2 + (ly / ry) ** 2;
+			if (norm >= 1) continue;
+
+			const angle = Math.atan2(ly / Math.max(0.001, ry), lx / Math.max(0.001, rx));
+			const targetX = Math.cos(angle) * rx;
+			const targetY = Math.sin(angle) * ry;
+			const pushX = targetX - lx;
+			const pushY = targetY - ly;
+			const wx = pushX * cos + pushY * sin;
+			const wy = -pushX * sin + pushY * cos;
+			coin.x += wx * 0.82;
+			coin.y += wy * 0.82;
+			const nLen = Math.hypot(wx, wy) || 1;
+			const nx = wx / nLen;
+			const ny = wy / nLen;
+			const dot = coin.vx * nx + coin.vy * ny;
+			if (dot < 0) {
+				coin.vx -= dot * nx * 1.35;
+				coin.vy -= dot * ny * 1.35;
+			}
+			coin.vx *= 0.64;
+			coin.vy *= 0.58;
+			coin.spin += (coin.vx - coin.vy) * 0.8;
+			if (ms - (block.lastDustMs || 0) > 90) {
+				block.lastDustMs = ms;
+				this.addLocalDust(block.x, block.y, 3, "#c8a27d");
+			}
+		}
+	}
+
+	updateLocalEffects(dt) {
+		for (const effect of this.localEffects) {
+			effect.life -= dt;
+			effect.x += effect.vx * dt;
+			effect.y += effect.vy * dt;
+			effect.vy += (effect.type === "shard" ? 0.44 : 0.18) * dt;
+			effect.vx *= Math.pow(0.32, dt);
+			effect.vy *= Math.pow(0.42, dt);
+			if (typeof effect.angle === "number") effect.angle += (effect.spin || 0) * dt;
+		}
+		this.localEffects = this.localEffects.filter(effect => effect.life > 0);
+	}
+
 	formatEndBody(outcome) {
 		if (!outcome.unfinishedRatio) return `You shook out ${outcome.coins} coins. All scheduled coins are done.`;
 		return `You shook out ${outcome.coins} coins. Next coin: ${outcome.unfinishedFlicks} of ${outcome.unfinishedRatio} flicks.`;
@@ -1550,15 +1804,27 @@ class ShakeOutApp {
 		const w = this.width || window.innerWidth;
 		const h = this.height || window.innerHeight;
 		const reservedTop = Math.max(48, h * 0.055);
-		const reservedBottom = this.screen === "playing" ? Math.max(178, h * 0.21) : Math.max(214, h * 0.25);
-		const jarH = Math.max(330, Math.min(h - reservedTop - reservedBottom, h * 0.67, 760));
-		const jarW = Math.max(230, Math.min(w * 0.84, jarH * 0.64, 460));
+		const reservedBottom = this.screen === "playing" ? Math.max(220, h * 0.24) : Math.max(260, h * 0.31);
+		const jarH = Math.max(320, Math.min(h - reservedTop - reservedBottom, h * 0.67, 760));
+		const jarW = Math.max(230, Math.min(w * 0.78, jarH * 0.56, 420));
 		return {
 			x: (w - jarW) / 2,
 			y: reservedTop,
 			w: jarW,
 			h: jarH
 		};
+	}
+
+	getBottleInnerBounds(localY) {
+		if (localY < 0.69) return { left: 0.15, right: 0.85 };
+		if (localY < 0.82) {
+			const t = easeInOut((localY - 0.69) / 0.13);
+			return {
+				left: lerp(0.15, 0.34, t),
+				right: lerp(0.85, 0.66, t)
+			};
+		}
+		return { left: 0.37, right: 0.63 };
 	}
 
 	getPileTarget(index) {
@@ -1582,13 +1848,11 @@ class ShakeOutApp {
 
 	getJarTransform(ms) {
 		const jar = this.getJarRect();
-		const shakeX = Math.sin(ms / 42) * this.jarImpulse * 8;
-		const shakeY = Math.cos(ms / 53) * this.jarImpulse * 4;
 		return {
 			jar,
-			cx: jar.x + jar.w / 2 + shakeX,
-			cy: jar.y + jar.h / 2 + shakeY,
-			angle: this.jarAngle
+			cx: jar.x + jar.w / 2,
+			cy: jar.y + jar.h / 2,
+			angle: 0
 		};
 	}
 
@@ -1606,7 +1870,7 @@ class ShakeOutApp {
 
 	getMouthPoint(ms) {
 		const jar = this.getJarRect();
-		return this.localToScreen(jar.w * 0.5, jar.h * 0.92, ms);
+		return this.localToScreen(jar.w * 0.5, jar.h * 0.925, ms);
 	}
 
 	draw(ms) {
@@ -1649,15 +1913,13 @@ class ShakeOutApp {
 
 	drawBackground(ctx, w, h) {
 		const sky = ctx.createLinearGradient(0, 0, 0, h);
-		sky.addColorStop(0, "#f9f1e6");
-		sky.addColorStop(0.48, "#eaf6f2");
-		sky.addColorStop(1, "#f7d8bd");
+		sky.addColorStop(0, "#fbf7ef");
+		sky.addColorStop(0.58, "#eef8f3");
+		sky.addColorStop(1, "#f7e6c8");
 		ctx.fillStyle = sky;
 		ctx.fillRect(0, 0, w, h);
-		ctx.fillStyle = "rgba(255, 184, 112, 0.12)";
-		ctx.fillRect(0, h * 0.68, w, h * 0.32);
-		ctx.fillStyle = "#c4dfd3";
-		ctx.fillRect(0, h - 76, w, 76);
+		ctx.fillStyle = "#d7e6d7";
+		ctx.fillRect(0, h - 74, w, 74);
 		ctx.fillStyle = "rgba(24, 33, 43, 0.12)";
 		ctx.beginPath();
 		ellipsePath(ctx, w * 0.5, h - 55, Math.min(w * 0.35, 240), 20, 0, 0, Math.PI * 2);
@@ -1675,10 +1937,11 @@ class ShakeOutApp {
 
 		this.drawJar(ctx, jar.w, jar.h);
 		if (!this.ended) {
-			this.drawCoinQueue(ctx, jar.w, jar.h, ms);
 			this.drawSand(ctx, jar.w, jar.h, progress, ms);
-			this.drawCoin(ctx, jar.w, jar.h, progress, ms);
 			this.drawBlockers(ctx, jar.w, jar.h, progress, ms);
+			this.drawCoinTrail(ctx, jar.w, jar.h, ms);
+			this.drawLocalEffects(ctx, jar.w, jar.h);
+			this.drawCoin(ctx, jar.w, jar.h, progress, ms);
 		}
 		this.drawJarGloss(ctx, jar.w, jar.h);
 		if (this.phase === "calibration") this.drawCalibrationCue(ctx, jar.w, jar.h, ms);
@@ -1687,77 +1950,71 @@ class ShakeOutApp {
 
 	drawJar(ctx, w, h) {
 		ctx.save();
-		ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
-		ctx.strokeStyle = "#18212b";
-		ctx.lineWidth = Math.max(6, w * 0.018);
+		ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+		ctx.strokeStyle = "#111820";
+		ctx.lineWidth = Math.max(5, w * 0.018);
+		ctx.lineJoin = "round";
 		ctx.beginPath();
-		ctx.moveTo(w * 0.27, h * 0.075);
-		ctx.lineTo(w * 0.73, h * 0.075);
-		ctx.bezierCurveTo(w * 0.83, h * 0.12, w * 0.88, h * 0.21, w * 0.88, h * 0.34);
-		ctx.lineTo(w * 0.88, h * 0.68);
-		ctx.bezierCurveTo(w * 0.88, h * 0.78, w * 0.77, h * 0.83, w * 0.64, h * 0.84);
-		ctx.lineTo(w * 0.64, h * 0.88);
-		ctx.quadraticCurveTo(w * 0.64, h * 0.94, w * 0.56, h * 0.95);
-		ctx.lineTo(w * 0.44, h * 0.95);
-		ctx.quadraticCurveTo(w * 0.36, h * 0.94, w * 0.36, h * 0.88);
-		ctx.lineTo(w * 0.36, h * 0.84);
-		ctx.bezierCurveTo(w * 0.23, h * 0.83, w * 0.12, h * 0.78, w * 0.12, h * 0.68);
-		ctx.lineTo(w * 0.12, h * 0.34);
-		ctx.bezierCurveTo(w * 0.12, h * 0.21, w * 0.17, h * 0.12, w * 0.27, h * 0.075);
+		ctx.moveTo(w * 0.5, h * 0.055);
+		ctx.bezierCurveTo(w * 0.75, h * 0.055, w * 0.88, h * 0.18, w * 0.88, h * 0.38);
+		ctx.lineTo(w * 0.88, h * 0.6);
+		ctx.bezierCurveTo(w * 0.88, h * 0.72, w * 0.79, h * 0.78, w * 0.67, h * 0.81);
+		ctx.quadraticCurveTo(w * 0.62, h * 0.825, w * 0.62, h * 0.865);
+		ctx.lineTo(w * 0.62, h * 0.91);
+		ctx.quadraticCurveTo(w * 0.62, h * 0.945, w * 0.55, h * 0.952);
+		ctx.lineTo(w * 0.45, h * 0.952);
+		ctx.quadraticCurveTo(w * 0.38, h * 0.945, w * 0.38, h * 0.91);
+		ctx.lineTo(w * 0.38, h * 0.865);
+		ctx.quadraticCurveTo(w * 0.38, h * 0.825, w * 0.33, h * 0.81);
+		ctx.bezierCurveTo(w * 0.21, h * 0.78, w * 0.12, h * 0.72, w * 0.12, h * 0.6);
+		ctx.lineTo(w * 0.12, h * 0.38);
+		ctx.bezierCurveTo(w * 0.12, h * 0.18, w * 0.25, h * 0.055, w * 0.5, h * 0.055);
 		ctx.closePath();
 		ctx.fill();
 		ctx.stroke();
 
-		ctx.fillStyle = "#ff9438";
-		ctx.strokeStyle = "#18212b";
-		ctx.lineWidth = Math.max(5, w * 0.015);
+		ctx.strokeStyle = "rgba(17, 24, 32, 0.38)";
+		ctx.lineWidth = Math.max(3, w * 0.009);
 		ctx.beginPath();
-		roundedRect(ctx, w * 0.26, h * 0.038, w * 0.48, h * 0.065, h * 0.018);
+		ellipsePath(ctx, w * 0.5, h * 0.074, w * 0.2, h * 0.026, 0, Math.PI * 0.08, Math.PI * 0.92);
+		ctx.stroke();
+
+		ctx.fillStyle = "#fef7ed";
+		ctx.strokeStyle = "#111820";
+		ctx.lineWidth = Math.max(5, w * 0.016);
+		ctx.beginPath();
+		roundedRect(ctx, w * 0.36, h * 0.835, w * 0.28, h * 0.095, h * 0.024);
 		ctx.fill();
 		ctx.stroke();
 
-		ctx.fillStyle = "#ff9438";
-		ctx.strokeStyle = "#18212b";
+		ctx.fillStyle = "#fbf7ef";
+		ctx.strokeStyle = "#111820";
+		ctx.lineWidth = Math.max(4, w * 0.013);
 		ctx.beginPath();
-		ellipsePath(ctx, w * 0.5, h * 0.925, w * 0.18, h * 0.035, 0, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.stroke();
-		ctx.fillStyle = "#f9f1e6";
-		ctx.beginPath();
-		ellipsePath(ctx, w * 0.5, h * 0.925, w * 0.125, h * 0.018, 0, 0, Math.PI * 2);
+		ellipsePath(ctx, w * 0.5, h * 0.932, w * 0.17, h * 0.035, 0, 0, Math.PI * 2);
 		ctx.fill();
 		ctx.stroke();
 
-		ctx.strokeStyle = "rgba(24, 33, 43, 0.48)";
-		ctx.lineWidth = Math.max(2, w * 0.008);
-		for (let i = -4; i <= 4; i++) {
-			const x = w * 0.5 + i * w * 0.037;
-			ctx.beginPath();
-			ctx.moveTo(x, h * 0.055);
-			ctx.lineTo(x, h * 0.108);
-			ctx.stroke();
-		}
-
-		ctx.strokeStyle = "rgba(24, 33, 43, 0.55)";
+		ctx.strokeStyle = "rgba(17, 24, 32, 0.42)";
 		ctx.lineWidth = Math.max(3, w * 0.01);
+		ctx.lineCap = "round";
 		ctx.beginPath();
-		ctx.moveTo(w * 0.22, h * 0.19);
-		ctx.bezierCurveTo(w * 0.18, h * 0.32, w * 0.19, h * 0.52, w * 0.19, h * 0.67);
+		ctx.moveTo(w * 0.2, h * 0.25);
+		ctx.bezierCurveTo(w * 0.16, h * 0.39, w * 0.18, h * 0.56, w * 0.2, h * 0.68);
 		ctx.stroke();
 		ctx.restore();
 	}
 
 	drawCoin(ctx, w, h, progress, ms) {
-		const kickT = clamp((ms - this.coinKickMs) / 420, 0, 1);
-		const hop = kickT < 1 ? Math.sin(kickT * Math.PI) * h * 0.04 : 0;
-		const lane = Math.sin(ms / 230 + this.currentCoinIndex) * w * 0.025 + Math.sin(progress * Math.PI * 2) * w * 0.028;
-		const x = w * 0.5 + lane + Math.sin(ms / 54) * this.jarImpulse * w * 0.011;
-		const y = lerp(h * 0.205, h * 0.835, easeOut(progress)) - hop + Math.cos(ms / 170) * this.jarImpulse * h * 0.006;
+		const coin = this.coinBody;
+		const x = coin ? coin.x * w : w * 0.5;
+		const y = coin ? coin.y * h : lerp(h * 0.2, h * 0.8, easeOut(progress));
+		const rotation = coin ? coin.rotation : 0;
 		let alpha = 1;
 		if (this.coinDropping) {
 			alpha = 0;
 		}
-		this.drawCoinShape(ctx, x, y, Math.min(w, h) * 0.075, Math.sin(ms / 190) * 0.22 + progress * 1.9, alpha);
+		this.drawCoinShape(ctx, x, y, Math.min(w, h) * 0.078, rotation, alpha);
 	}
 
 	drawCoinQueue(ctx, w, h, ms) {
@@ -1787,6 +2044,15 @@ class ShakeOutApp {
 		ctx.quadraticCurveTo(w * 0.5, h * 0.285, w * 0.64, h * 0.235);
 		ctx.stroke();
 		ctx.restore();
+	}
+
+	drawCoinTrail(ctx, w, h, ms) {
+		for (let i = 0; i < this.coinTrail.length; i++) {
+			const trail = this.coinTrail[i];
+			const alpha = clamp(trail.life / trail.maxLife, 0, 1) * 0.24;
+			if (alpha <= 0.01) continue;
+			this.drawCoinShape(ctx, trail.x * w, trail.y * h, Math.min(w, h) * 0.068, trail.rotation, alpha);
+		}
 	}
 
 	drawDroppingCoin(ctx, ms) {
@@ -1850,24 +2116,21 @@ class ShakeOutApp {
 	}
 
 	drawSand(ctx, w, h, progress, ms) {
-		const clearLine = lerp(0.24, 0.8, easeOut(progress));
+		const coin = this.coinBody;
 		for (let i = 0; i < this.sand.length; i++) {
 			const grain = this.sand[i];
-			const nearCoinPath = Math.abs(grain.x - 0.5) < 0.18 && grain.y < clearLine + 0.08;
-			const push = nearCoinPath ? easeOut(progress) * grain.float : 0;
-			const x = grain.x * w
-				+ Math.sin(ms / 130 + grain.wobble) * (this.jarImpulse * 5 + push * 9)
-				+ (grain.x < 0.5 ? -1 : 1) * push * w * 0.035;
-			const y = grain.y * h
-				+ Math.cos(ms / 145 + grain.wobble) * (this.jarImpulse * 4 + push * 6)
-				+ push * h * 0.025;
-			const r = grain.r * Math.min(w, h) * (nearCoinPath ? 0.9 : 1);
+			const d = coin ? Math.hypot(grain.x - coin.x, grain.y - coin.y) : 1;
+			const nearCoin = d < 0.12;
+			const brighten = nearCoin ? clamp(1 - d / 0.12, 0, 1) : 0;
+			const x = grain.x * w;
+			const y = grain.y * h;
+			const r = grain.r * Math.min(w, h) * (1 + brighten * 0.45);
 
 			ctx.save();
-			ctx.globalAlpha = nearCoinPath ? 0.72 : 0.9;
+			ctx.globalAlpha = 0.58 + brighten * 0.32;
 			ctx.fillStyle = grain.color;
-			ctx.strokeStyle = "rgba(24, 33, 43, 0.18)";
-			ctx.lineWidth = Math.max(1, r * 0.18);
+			ctx.strokeStyle = brighten > 0.2 ? "rgba(255, 255, 255, 0.62)" : "rgba(24, 33, 43, 0.1)";
+			ctx.lineWidth = Math.max(0.8, r * 0.15);
 			ctx.beginPath();
 			ctx.arc(x, y, r, 0, Math.PI * 2);
 			ctx.fill();
@@ -1877,56 +2140,80 @@ class ShakeOutApp {
 	}
 
 	drawBlockers(ctx, w, h, progress, ms) {
-		const clearFloat = progress * (this.blockers.length + 0.8);
 		for (let i = this.blockers.length - 1; i >= 0; i--) {
 			const block = this.blockers[i];
-			const damage = clamp(clearFloat - i, 0, 1);
-			if (damage >= 0.985) continue;
+			const damage = this.brokenBlockers.has(block.id) ? 1 : this.getBlockerDamage(block, progress);
+			if (damage >= 0.995) continue;
 			const loosen = easeOut(damage);
-			const flicker = damage > 0.62 ? Math.sin(ms / 34 + i) * 0.1 : 0;
-			const x = block.x * w + Math.sin(ms / 92 + block.wobble) * (this.jarImpulse * 5 + loosen * 11);
-			const y = block.y * h + Math.cos(ms / 114 + block.wobble) * (this.jarImpulse * 4 + loosen * 6) + loosen * h * 0.014;
-			const r = block.r * Math.min(w, h) * (1 - loosen * 0.17);
+			const x = block.x * w;
+			const y = block.y * h;
+			const bw = block.w * w * (1 - loosen * 0.24);
+			const bh = block.h * h * (1 - loosen * 0.18);
+			const flash = damage > 0.68 ? 0.2 + Math.sin(ms / 48 + i) * 0.1 : 0;
 
 			ctx.save();
-			ctx.globalAlpha = clamp(0.96 - damage * 0.48 + flicker, 0.2, 1);
+			ctx.globalAlpha = clamp(0.98 - damage * 0.42 + flash, 0.12, 1);
 			ctx.translate(x, y);
-			ctx.rotate(block.angle + Math.sin(ms / 160 + i) * 0.12 + loosen * 0.55);
-			ctx.fillStyle = damage > 0.68 ? "#d5aa76" : damage > 0.34 ? "#a47752" : block.color;
+			ctx.rotate(block.angle + loosen * 0.25);
+			ctx.fillStyle = damage > 0.7 ? block.crystal : damage > 0.38 ? "#a77a55" : block.color;
 			ctx.strokeStyle = "#2b2119";
-			ctx.lineWidth = Math.max(3, r * 0.16);
+			ctx.lineWidth = Math.max(2.5, w * 0.009);
 			ctx.beginPath();
-			if (block.shape === 0) ellipsePath(ctx, 0, 0, r * 1.7, r * 0.88, 0, 0, Math.PI * 2);
-			else if (block.shape === 1) roundedRect(ctx, -r * 1.22, -r * 0.86, r * 2.44, r * 1.72, r * 0.35);
-			else {
-				ctx.moveTo(-r * 1.28, -r * 0.22);
-				ctx.quadraticCurveTo(-r * 0.68, -r * 1.12, r * 0.16, -r * 0.82);
-				ctx.quadraticCurveTo(r * 1.34, -r * 0.42, r * 1.02, r * 0.56);
-				ctx.quadraticCurveTo(r * 0.1, r * 1.18, -r * 1.08, r * 0.56);
-				ctx.closePath();
-			}
+			roundedRect(ctx, -bw * 0.5, -bh * 0.5, bw, bh, bh * 0.45);
 			ctx.fill();
 			ctx.stroke();
 
-			ctx.strokeStyle = damage > 0.16 ? "rgba(255, 244, 218, 0.78)" : "rgba(255, 244, 218, 0.28)";
-			ctx.lineWidth = Math.max(2, r * 0.09);
+			ctx.strokeStyle = damage > 0.18 ? "rgba(255, 247, 237, 0.86)" : "rgba(255, 247, 237, 0.38)";
+			ctx.lineWidth = Math.max(1.8, w * 0.006);
 			ctx.beginPath();
-			ctx.moveTo(-r * 0.82, -r * 0.05);
-			ctx.lineTo(-r * 0.28, r * 0.1);
-			ctx.lineTo(r * 0.18, -r * 0.18);
-			ctx.lineTo(r * 0.72, r * 0.04);
+			ctx.moveTo(-bw * 0.38, -bh * 0.12);
+			ctx.lineTo(-bw * 0.14, bh * 0.14);
+			ctx.lineTo(bw * 0.07, -bh * 0.2);
+			ctx.lineTo(bw * 0.34, bh * 0.08);
 			ctx.stroke();
 
-			if (damage > 0.54) {
+			if (damage > 0.48) {
 				ctx.strokeStyle = "rgba(43, 33, 25, 0.72)";
-				ctx.lineWidth = Math.max(2, r * 0.08);
+				ctx.lineWidth = Math.max(1.5, w * 0.005);
 				ctx.beginPath();
-				ctx.moveTo(-r * 0.5, -r * 0.42);
-				ctx.lineTo(-r * 0.08, -r * 0.06);
-				ctx.lineTo(-r * 0.32, r * 0.34);
-				ctx.moveTo(r * 0.16, -r * 0.32);
-				ctx.lineTo(r * 0.44, r * 0.18);
+				ctx.moveTo(-bw * 0.22, -bh * 0.45);
+				ctx.lineTo(-bw * 0.03, -bh * 0.08);
+				ctx.lineTo(-bw * 0.15, bh * 0.42);
+				ctx.moveTo(bw * 0.12, -bh * 0.44);
+				ctx.lineTo(bw * 0.25, bh * 0.36);
 				ctx.stroke();
+			}
+			ctx.restore();
+		}
+	}
+
+	drawLocalEffects(ctx, w, h) {
+		for (const effect of this.localEffects) {
+			const alpha = clamp(effect.life / effect.maxLife, 0, 1);
+			if (alpha <= 0.01) continue;
+			const x = effect.x * w;
+			const y = effect.y * h;
+			const r = effect.r * Math.min(w, h);
+			ctx.save();
+			ctx.globalAlpha = alpha;
+			ctx.fillStyle = effect.color;
+			ctx.strokeStyle = "rgba(17, 24, 32, 0.14)";
+			ctx.lineWidth = Math.max(0.8, r * 0.12);
+			ctx.translate(x, y);
+			if (effect.type === "shard") {
+				ctx.rotate(effect.angle || 0);
+				ctx.beginPath();
+				ctx.moveTo(0, -r);
+				ctx.lineTo(r * 0.85, r * 0.65);
+				ctx.lineTo(-r * 0.75, r * 0.55);
+				ctx.closePath();
+				ctx.fill();
+				ctx.stroke();
+			}
+			else {
+				ctx.beginPath();
+				ctx.arc(0, 0, r, 0, TAU);
+				ctx.fill();
 			}
 			ctx.restore();
 		}
@@ -1934,18 +2221,18 @@ class ShakeOutApp {
 
 	drawJarGloss(ctx, w, h) {
 		ctx.save();
-		ctx.globalAlpha = 0.42;
-		ctx.strokeStyle = "white";
-		ctx.lineWidth = Math.max(5, w * 0.016);
+		ctx.globalAlpha = 0.5;
+		ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+		ctx.lineWidth = Math.max(4, w * 0.014);
 		ctx.lineCap = "round";
 		ctx.beginPath();
-		ctx.moveTo(w * 0.73, h * 0.18);
-		ctx.quadraticCurveTo(w * 0.8, h * 0.39, w * 0.74, h * 0.69);
+		ctx.moveTo(w * 0.75, h * 0.19);
+		ctx.quadraticCurveTo(w * 0.82, h * 0.39, w * 0.75, h * 0.66);
 		ctx.stroke();
-		ctx.globalAlpha = 0.34;
+		ctx.globalAlpha = 0.38;
 		ctx.beginPath();
-		ctx.moveTo(w * 0.28, h * 0.13);
-		ctx.quadraticCurveTo(w * 0.22, h * 0.3, w * 0.23, h * 0.52);
+		ctx.moveTo(w * 0.25, h * 0.18);
+		ctx.quadraticCurveTo(w * 0.18, h * 0.34, w * 0.2, h * 0.59);
 		ctx.stroke();
 		ctx.restore();
 	}

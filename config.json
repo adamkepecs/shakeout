@@ -1,17 +1,17 @@
 {
-	"appVersion": "0.1.3",
+	"appVersion": "0.1.4",
 	"calibrationVersion": "baseline-guided-upright-v3",
-	"theme": "inverted-flat-jar-pastel-sand-v2",
+	"theme": "clean-bottle-viscous-sand-v3",
 	"participantIdParamNames": ["participantId", "subjectId", "pid"],
 	"schedule": {
-		"startRatio": 1,
-		"growthBase": 2,
-		"maxCoins": 12,
+		"startRatio": 2,
+		"growthBase": 1.4,
+		"maxCoins": 7,
 		"rounding": "round",
-		"explicitRatios": []
+		"explicitRatios": [2, 4, 6, 9, 13, 18, 23]
 	},
 	"tutorial": {
-		"ratios": [1, 2, 4]
+		"ratios": [2, 4]
 	},
 	"motion": {
 		"calibrationSamplesRequired": 8,
