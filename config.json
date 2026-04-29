@@ -1,7 +1,7 @@
 {
-	"appVersion": "0.1.2",
+	"appVersion": "0.1.3",
 	"calibrationVersion": "baseline-guided-upright-v3",
-	"theme": "glass-jar-river-rocks",
+	"theme": "inverted-flat-jar-pastel-sand-v2",
 	"participantIdParamNames": ["participantId", "subjectId", "pid"],
 	"schedule": {
 		"startRatio": 1,
@@ -32,7 +32,9 @@
 		"relaxedReturnAfterMs": 180,
 		"relaxedReturnDropRatio": 0.58,
 		"accelerationJerkScaleDps": 44,
-		"debounceMs": 300,
+		"debounceMs": 760,
+		"postFlickSettleMs": 180,
+		"postFlickSettleRatio": 0.45,
 		"invalidLogCooldownMs": 550,
 		"weakMovementFloorDps": 12,
 		"sensorWarmupMs": 1800,
