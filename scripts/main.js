@@ -40,6 +40,10 @@ function formatRatio(n) {
 	return String(Math.round(n));
 }
 
+function coinLabel(count) {
+	return `${count} ${count === 1 ? "coin" : "coins"}`;
+}
+
 function percentile(values, q) {
 	if (!values.length) return 0;
 	const sorted = values.slice().sort((a, b) => a - b);
@@ -462,8 +466,8 @@ class ShakeOutApp {
 		this.ended = false;
 		this.postStatus = "not_sent";
 		this.coinDropping = null;
+		this.coinFailing = null;
 		this.coinBody = null;
-		this.coinTrail = [];
 		this.collectedCoins = [];
 		this.countAnimation = null;
 		this.coinKickMs = 0;
@@ -475,6 +479,10 @@ class ShakeOutApp {
 		this.blockers = [];
 		this.brokenBlockers = new Set();
 		this.lastBlockerProgress = 0;
+		this.coinStartMs = 0;
+		this.coinDeadlineMs = 0;
+		this.coinWarningMs = 0;
+		this.coinWarningActive = false;
 		this.animationTick = 0;
 
 		this.setupDots();
@@ -935,6 +943,7 @@ class ShakeOutApp {
 		this.screen = "playing";
 		this.phase = "tutorial";
 		this.isMeasured = false;
+		this.panel.classList.remove("warning");
 		this.activeRatios = this.tutorialRatios;
 		this.collectedCoins = [];
 		this.countAnimation = null;
@@ -960,6 +969,7 @@ class ShakeOutApp {
 		this.phase = "session";
 		this.isMeasured = true;
 		this.ended = false;
+		this.panel.classList.remove("warning");
 		this.activeRatios = this.schedule;
 		this.currentCoinIndex = 0;
 		this.totalValidFlicks = 0;
@@ -1021,12 +1031,13 @@ class ShakeOutApp {
 		this.isMeasured = false;
 		this.ended = false;
 		this.coinDropping = null;
+		this.coinFailing = null;
 		this.countAnimation = null;
 		this.collectedCoins = [];
 		this.completedRatios = [];
 		this.activeRatios = this.schedule;
 		this.classifier.setMode("idle");
-		this.panel.classList.remove("compact", "hidden");
+		this.panel.classList.remove("compact", "hidden", "warning");
 		this.quitButton.classList.add("hidden");
 		this.sampleDots.classList.add("hidden");
 		this.meter.style.width = "0%";
@@ -1082,14 +1093,21 @@ class ShakeOutApp {
 		this.currentRatio = ratio;
 		this.validInRatio = 0;
 		this.coinDropping = null;
+		this.coinFailing = null;
 		this.coinKickMs = 0;
 		this.coinBody = this.createCoinBody(index, ratio);
-		this.coinTrail = [];
 		this.localEffects = [];
 		this.sand = this.makeSand(index, ratio);
 		this.blockers = this.makeBlockers(index, ratio);
 		this.brokenBlockers = new Set();
 		this.lastBlockerProgress = 0;
+		this.coinStartMs = performance.now();
+		const sessionCfg = this.config.session || {};
+		const limitSeconds = (sessionCfg.coinTimeoutBaseSeconds || 14) + ratio * (sessionCfg.coinTimeoutPerFlickSeconds || 1.5);
+		this.coinDeadlineMs = this.coinStartMs + limitSeconds * 1000;
+		this.coinWarningMs = this.coinDeadlineMs - (sessionCfg.coinWarningSeconds || 6) * 1000;
+		this.coinWarningActive = false;
+		this.panel.classList.remove("warning");
 		this.addLocalDust(this.coinBody.x, this.coinBody.y, 10, "#f1cf72");
 		this.updateHud();
 	}
@@ -1097,8 +1115,8 @@ class ShakeOutApp {
 	createCoinBody(index, ratio) {
 		const rand = seededRandom((index + 11) * 4073 + ratio * 83);
 		return {
-			x: 0.5 + (rand() - 0.5) * 0.08,
-			y: 0.18,
+			x: 0.5 + (rand() - 0.5) * 0.06,
+			y: 0.24,
 			vx: 0,
 			vy: 0,
 			r: 0.052,
@@ -1109,50 +1127,79 @@ class ShakeOutApp {
 	}
 
 	makeSand(index, ratio) {
-		const count = clamp(115 + index * 12 + Math.ceil(ratio * 1.8), 120, 260);
+		const count = clamp(3100 + index * 110 + Math.ceil(ratio * 42), 3200, 5200);
 		const rand = seededRandom((index + 3) * 1777 + ratio * 3181);
-		const colors = ["#ffdca8", "#c8f1d2", "#b9dcff", "#ffd1e0", "#d8cdf8", "#fff0a8", "#c2f2e5"];
+		const colors = ["#ffd7a3", "#bdf4ce", "#a9d8ff", "#ffc4d7", "#d2c3ff", "#fff09b", "#aef0e3", "#ffb4a8"];
 		const sand = [];
 		for (let i = 0; i < count; i++) {
-			const band = Math.pow(rand(), 0.72);
-			const lowerPile = rand() < 0.46;
+			const lowerBias = i % 4 === 0 ? Math.pow(rand(), 0.48) : rand();
+			const y = 0.145 + lowerBias * 0.705;
+			const bounds = this.getBottleInnerBounds(y);
+			const margin = 0.02;
 			sand.push({
-				x: 0.18 + rand() * 0.64,
-				y: lowerPile ? 0.49 + Math.pow(rand(), 0.55) * 0.31 : 0.24 + band * 0.48,
-				r: 0.0045 + rand() * 0.0075,
+				x: bounds.left + margin + rand() * Math.max(0.02, bounds.right - bounds.left - margin * 2),
+				y,
+				r: 0.0025 + rand() * 0.0046,
 				color: colors[Math.floor(rand() * colors.length)],
-				phase: rand() * TAU
+				phase: rand() * TAU,
+				shape: rand() > 0.52 ? "square" : "dot"
 			});
 		}
 		return sand;
 	}
 
 	makeBlockers(index, ratio) {
-		const count = clamp(Math.ceil(ratio / 3.5) + Math.floor(index / 2), 1, 8);
+		const count = clamp(Math.ceil(ratio / 4.2) + Math.floor(index / 3), 1, 7);
 		const rand = seededRandom((index + 5) * 2203 + ratio * 4441);
 		const blockers = [];
+		const palettes = [
+			["#45c2a2", "#66d4b7", "#2fa386", "#d3fff1"],
+			["#ef7da3", "#ff9dbc", "#d95f8f", "#ffe1ec"],
+			["#74a7ff", "#96c0ff", "#4f86e8", "#e0ecff"],
+			["#f6c05f", "#ffd681", "#e2a842", "#fff1c7"],
+			["#9b85f2", "#b7a7ff", "#7761d8", "#ebe6ff"]
+		];
 		for (let i = 0; i < count; i++) {
 			const t = (i + 1) / (count + 1);
-			const laneBias = i % 2 === 0 ? -0.025 : 0.025;
-			const breakAt = clamp(0.22 + t * 0.64, 0.32, 0.9);
+			const breakAt = clamp(0.2 + t * 0.68, 0.34, 0.92);
+			const palette = palettes[(index + i) % palettes.length];
+			const blockW = clamp(0.54 + rand() * 0.12 + index * 0.01, 0.54, 0.72);
+			const blockH = 0.052 + rand() * 0.032;
+			const cols = Math.max(7, Math.round(9 + blockW * 8 + rand() * 3));
+			const rows = Math.max(3, Math.round(3 + blockH * 18 + rand() * 2));
+			const tiles = [];
+			for (let row = 0; row < rows; row++) {
+				for (let col = 0; col < cols; col++) {
+					const edge = Math.abs((col + 0.5) / cols - 0.5) * 2;
+					const rowEdge = Math.abs((row + 0.5) / rows - 0.5) * 2;
+					if (edge + rowEdge * 0.35 > 1.12 + rand() * 0.22) continue;
+					tiles.push({
+						dx: ((col + 0.5) / cols - 0.5) + (rand() - 0.5) * 0.028,
+						dy: ((row + 0.5) / rows - 0.5) + (rand() - 0.5) * 0.09,
+						size: 0.054 + rand() * 0.024,
+						color: palette[Math.floor(rand() * (palette.length - 1))]
+					});
+				}
+			}
 			blockers.push({
 				id: `${index}-${i}`,
-				x: 0.5 + laneBias + (rand() - 0.5) * 0.035,
-				y: 0.32 + t * 0.47 + (rand() - 0.5) * 0.025,
-				w: clamp(0.28 + rand() * 0.16 + index * 0.012, 0.28, 0.48),
-				h: 0.038 + rand() * 0.024,
-				angle: (rand() - 0.5) * 0.28,
+				x: 0.5 + (rand() - 0.5) * 0.018,
+				y: 0.31 + t * 0.49 + (rand() - 0.5) * 0.018,
+				w: blockW,
+				h: blockH,
+				angle: (rand() - 0.5) * 0.08,
 				breakAt,
-				color: ["#7a4f34", "#6a432e", "#80563b", "#5e3d2c"][Math.floor(rand() * 4)],
-				crystal: ["#7dd3fc", "#f0abfc", "#a7f3d0", "#fde68a"][Math.floor(rand() * 4)],
-				cracks: rand()
+				color: palette[2],
+				crystal: palette[3],
+				cracks: rand(),
+				tiles
 			});
 		}
 		return blockers;
 	}
 
 	onValidFlick(result) {
-		if (this.screen !== "playing" || this.coinDropping || this.ended) return;
+		if (this.screen !== "playing" || this.coinDropping || this.coinFailing || this.ended) return;
 		const now = performance.now();
 		const interFlickIntervalMs = this.previousValidFlickMs ? now - this.previousValidFlickMs : null;
 		this.previousValidFlickMs = now;
@@ -1191,6 +1238,7 @@ class ShakeOutApp {
 
 	onInvalidMovement(result) {
 		if (this.ended) return;
+		if (this.coinFailing) return;
 		if (!["calibration", "tutorial", "session"].includes(this.phase)) return;
 		this.jarImpulse = Math.max(this.jarImpulse, 0.25);
 		this.logEvent("invalid_movement", {
@@ -1398,7 +1446,7 @@ class ShakeOutApp {
 			unfinishedProgress: payload.outcomes.unfinishedProgress
 		});
 		payload.events = this.events.slice();
-		this.panel.classList.remove("compact", "hidden");
+		this.panel.classList.remove("compact", "hidden", "warning");
 		this.kicker.textContent = "Complete";
 		this.title.textContent = "Counting coins";
 		this.body.textContent = "Your collected coins are being counted.";
@@ -1543,6 +1591,17 @@ class ShakeOutApp {
 		this.audio.idle();
 	}
 
+	feedbackTimeoutWarning() {
+		if (navigator.vibrate) navigator.vibrate([45, 40, 45]);
+		this.audio.idle();
+	}
+
+	feedbackCoinFail() {
+		if (navigator.vibrate) navigator.vibrate([90, 70, 120]);
+		this.audio.tone(130, 0.18, "sine", 0.035);
+		this.audio.tone(92, 0.28, "triangle", 0.026, 0.12);
+	}
+
 	addParticles(count, color) {
 		const jar = this.getJarRect();
 		const mouth = this.getMouthPoint(performance.now());
@@ -1612,6 +1671,23 @@ class ShakeOutApp {
 		}
 	}
 
+	addDissolveBurst(x, y) {
+		const colors = ["#111820", "#2f2f35", "#52525b", "#fca5a5"];
+		for (let i = 0; i < 48; i++) {
+			this.localEffects.push({
+				type: "dust",
+				x: x + (Math.random() - 0.5) * 0.12,
+				y: y + (Math.random() - 0.5) * 0.08,
+				vx: (Math.random() - 0.5) * 0.22,
+				vy: 0.04 + Math.random() * 0.24,
+				r: 0.005 + Math.random() * 0.012,
+				life: 0.7 + Math.random() * 0.35,
+				maxLife: 1.05,
+				color: colors[Math.floor(Math.random() * colors.length)]
+			});
+		}
+	}
+
 	updateHud() {
 		const coinNumber = this.isMeasured || this.screen === "ended" ? this.completedRatios.length : this.collectedCoins.length;
 		this.coinHud.textContent = String(coinNumber);
@@ -1663,6 +1739,7 @@ class ShakeOutApp {
 	updateAnimation(dt, ms) {
 		this.jarImpulse = Math.max(0, this.jarImpulse - dt * 2.6);
 		this.jarAngle = 0;
+		this.checkCoinTimer(ms);
 		this.updateCoinPhysics(dt, ms);
 		this.updateLocalEffects(dt);
 		for (const particle of this.particles) {
@@ -1675,15 +1752,63 @@ class ShakeOutApp {
 		if (this.coinDropping && !this.ended && ms - this.coinDropping.startMs >= this.coinDropping.durationMs) {
 			this.advanceAfterCoinDrop();
 		}
+		if (this.coinFailing && !this.ended && ms - this.coinFailing.startMs >= this.coinFailing.durationMs) {
+			this.coinFailing = null;
+			this.endSession("coin_timeout");
+		}
 		if (this.countAnimation) {
 			const t = clamp((ms - this.countAnimation.startMs) / this.countAnimation.durationMs, 0, 1);
-			this.title.textContent = `${Math.round(this.countAnimation.coins * easeOut(t))} coins`;
+			this.title.textContent = coinLabel(Math.round(this.countAnimation.coins * easeOut(t)));
 			if (t >= 1) this.body.textContent = this.formatEndBody(this.countAnimation);
 		}
 	}
 
+	checkCoinTimer(ms) {
+		if (!this.isMeasured || this.ended || this.screen !== "playing" || this.coinDropping || this.coinFailing) return;
+		if (!this.coinDeadlineMs) return;
+		if (!this.coinWarningActive && ms >= this.coinWarningMs) {
+			this.coinWarningActive = true;
+			this.panel.classList.add("warning");
+			this.feedbackTimeoutWarning();
+			this.statusLine.textContent = "Hurry: a few seconds left.";
+			this.logEvent("coin_timeout_warning", {
+				currentCoin: this.currentCoinIndex + 1,
+				currentRatio: this.currentRatio,
+				validFlickCountWithinCurrentRatio: this.validInRatio,
+				secondsRemaining: Math.max(0, Math.round((this.coinDeadlineMs - ms) / 1000))
+			});
+		}
+		if (ms >= this.coinDeadlineMs) this.failCurrentCoin();
+	}
+
+	failCurrentCoin() {
+		if (this.coinFailing || this.coinDropping || this.ended) return;
+		const now = performance.now();
+		this.coinFailing = {
+			startMs: now,
+			durationMs: 950
+		};
+		this.classifier.setMode("idle");
+		this.panel.classList.add("warning");
+		this.title.textContent = "Time";
+		this.body.textContent = "The coin sinks back into the sand.";
+		this.statusLine.textContent = "Trial ended.";
+		this.feedbackCoinFail();
+		if (this.coinBody) {
+			this.addDissolveBurst(this.coinBody.x, this.coinBody.y);
+			this.coinBody.vx = 0;
+			this.coinBody.vy = 0;
+		}
+		this.logEvent("coin_timeout", {
+			currentCoin: this.currentCoinIndex + 1,
+			currentRatio: this.currentRatio,
+			validFlickCountWithinCurrentRatio: this.validInRatio,
+			totalValidFlickCount: this.totalValidFlicks
+		});
+	}
+
 	updateCoinPhysics(dt, ms) {
-		if (!this.coinBody || this.coinDropping || this.ended || this.screen !== "playing") return;
+		if (!this.coinBody || this.coinDropping || this.coinFailing || this.ended || this.screen !== "playing") return;
 		const coin = this.coinBody;
 		const progress = this.currentRatio ? clamp(this.validInRatio / this.currentRatio, 0, 1) : 0;
 		const stepCount = 2;
@@ -1701,18 +1826,6 @@ class ShakeOutApp {
 			this.resolveCoinBlockers(coin, progress, ms);
 		}
 
-		if (!this.coinTrail.length || ms - this.coinTrail[this.coinTrail.length - 1].ms > 38) {
-			this.coinTrail.push({
-				x: coin.x,
-				y: coin.y,
-				rotation: coin.rotation,
-				ms,
-				life: 0.42,
-				maxLife: 0.42
-			});
-		}
-		for (const trail of this.coinTrail) trail.life -= dt;
-		this.coinTrail = this.coinTrail.filter(t => t.life > 0);
 	}
 
 	resolveCoinWalls(coin) {
@@ -1777,7 +1890,12 @@ class ShakeOutApp {
 			coin.spin += (coin.vx - coin.vy) * 0.8;
 			if (ms - (block.lastDustMs || 0) > 90) {
 				block.lastDustMs = ms;
-				this.addLocalDust(block.x, block.y, 3, "#c8a27d");
+				this.addLocalDust(block.x, block.y, 3, block.color);
+			}
+			if (progress >= block.breakAt - 0.04 && !this.brokenBlockers.has(block.id)) {
+				this.brokenBlockers.add(block.id);
+				this.feedbackBreak();
+				this.addBreakBurst(block);
 			}
 		}
 	}
@@ -1796,8 +1914,8 @@ class ShakeOutApp {
 	}
 
 	formatEndBody(outcome) {
-		if (!outcome.unfinishedRatio) return `You shook out ${outcome.coins} coins. All scheduled coins are done.`;
-		return `You shook out ${outcome.coins} coins. Next coin: ${outcome.unfinishedFlicks} of ${outcome.unfinishedRatio} flicks.`;
+		if (!outcome.unfinishedRatio) return `You shook out ${coinLabel(outcome.coins)}. All scheduled coins are done.`;
+		return `You shook out ${coinLabel(outcome.coins)}. Next coin: ${outcome.unfinishedFlicks} of ${outcome.unfinishedRatio} flicks.`;
 	}
 
 	getJarRect() {
@@ -1816,12 +1934,12 @@ class ShakeOutApp {
 	}
 
 	getBottleInnerBounds(localY) {
-		if (localY < 0.69) return { left: 0.15, right: 0.85 };
+		if (localY < 0.72) return { left: 0.14, right: 0.86 };
 		if (localY < 0.82) {
-			const t = easeInOut((localY - 0.69) / 0.13);
+			const t = easeInOut((localY - 0.72) / 0.1);
 			return {
-				left: lerp(0.15, 0.34, t),
-				right: lerp(0.85, 0.66, t)
+				left: lerp(0.14, 0.34, t),
+				right: lerp(0.86, 0.66, t)
 			};
 		}
 		return { left: 0.37, right: 0.63 };
@@ -1937,53 +2055,64 @@ class ShakeOutApp {
 
 		this.drawJar(ctx, jar.w, jar.h);
 		if (!this.ended) {
+			ctx.save();
+			this.bottlePath(ctx, jar.w, jar.h);
+			ctx.clip();
 			this.drawSand(ctx, jar.w, jar.h, progress, ms);
 			this.drawBlockers(ctx, jar.w, jar.h, progress, ms);
-			this.drawCoinTrail(ctx, jar.w, jar.h, ms);
 			this.drawLocalEffects(ctx, jar.w, jar.h);
 			this.drawCoin(ctx, jar.w, jar.h, progress, ms);
+			ctx.restore();
 		}
-		this.drawJarGloss(ctx, jar.w, jar.h);
+		this.drawJarRim(ctx, jar.w, jar.h);
 		if (this.phase === "calibration") this.drawCalibrationCue(ctx, jar.w, jar.h, ms);
 		ctx.restore();
 	}
 
+	bottlePath(ctx, w, h) {
+		ctx.beginPath();
+		ctx.moveTo(w * 0.22, h * 0.07);
+		ctx.lineTo(w * 0.78, h * 0.07);
+		ctx.bezierCurveTo(w * 0.85, h * 0.14, w * 0.88, h * 0.25, w * 0.88, h * 0.41);
+		ctx.lineTo(w * 0.88, h * 0.6);
+		ctx.bezierCurveTo(w * 0.88, h * 0.73, w * 0.79, h * 0.78, w * 0.67, h * 0.82);
+		ctx.quadraticCurveTo(w * 0.62, h * 0.835, w * 0.62, h * 0.872);
+		ctx.lineTo(w * 0.62, h * 0.915);
+		ctx.quadraticCurveTo(w * 0.62, h * 0.95, w * 0.55, h * 0.955);
+		ctx.lineTo(w * 0.45, h * 0.955);
+		ctx.quadraticCurveTo(w * 0.38, h * 0.95, w * 0.38, h * 0.915);
+		ctx.lineTo(w * 0.38, h * 0.872);
+		ctx.quadraticCurveTo(w * 0.38, h * 0.835, w * 0.33, h * 0.82);
+		ctx.bezierCurveTo(w * 0.21, h * 0.78, w * 0.12, h * 0.73, w * 0.12, h * 0.6);
+		ctx.lineTo(w * 0.12, h * 0.41);
+		ctx.bezierCurveTo(w * 0.12, h * 0.25, w * 0.15, h * 0.14, w * 0.22, h * 0.07);
+		ctx.closePath();
+	}
+
 	drawJar(ctx, w, h) {
 		ctx.save();
-		ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+		ctx.fillStyle = this.coinWarningActive ? "rgba(255, 236, 232, 0.78)" : "rgba(255, 255, 255, 0.54)";
 		ctx.strokeStyle = "#111820";
 		ctx.lineWidth = Math.max(5, w * 0.018);
 		ctx.lineJoin = "round";
-		ctx.beginPath();
-		ctx.moveTo(w * 0.5, h * 0.055);
-		ctx.bezierCurveTo(w * 0.75, h * 0.055, w * 0.88, h * 0.18, w * 0.88, h * 0.38);
-		ctx.lineTo(w * 0.88, h * 0.6);
-		ctx.bezierCurveTo(w * 0.88, h * 0.72, w * 0.79, h * 0.78, w * 0.67, h * 0.81);
-		ctx.quadraticCurveTo(w * 0.62, h * 0.825, w * 0.62, h * 0.865);
-		ctx.lineTo(w * 0.62, h * 0.91);
-		ctx.quadraticCurveTo(w * 0.62, h * 0.945, w * 0.55, h * 0.952);
-		ctx.lineTo(w * 0.45, h * 0.952);
-		ctx.quadraticCurveTo(w * 0.38, h * 0.945, w * 0.38, h * 0.91);
-		ctx.lineTo(w * 0.38, h * 0.865);
-		ctx.quadraticCurveTo(w * 0.38, h * 0.825, w * 0.33, h * 0.81);
-		ctx.bezierCurveTo(w * 0.21, h * 0.78, w * 0.12, h * 0.72, w * 0.12, h * 0.6);
-		ctx.lineTo(w * 0.12, h * 0.38);
-		ctx.bezierCurveTo(w * 0.12, h * 0.18, w * 0.25, h * 0.055, w * 0.5, h * 0.055);
-		ctx.closePath();
+		this.bottlePath(ctx, w, h);
 		ctx.fill();
-		ctx.stroke();
+		ctx.restore();
+	}
 
-		ctx.strokeStyle = "rgba(17, 24, 32, 0.38)";
-		ctx.lineWidth = Math.max(3, w * 0.009);
-		ctx.beginPath();
-		ellipsePath(ctx, w * 0.5, h * 0.074, w * 0.2, h * 0.026, 0, Math.PI * 0.08, Math.PI * 0.92);
-		ctx.stroke();
-
-		ctx.fillStyle = "#fef7ed";
+	drawJarRim(ctx, w, h) {
+		ctx.save();
 		ctx.strokeStyle = "#111820";
-		ctx.lineWidth = Math.max(5, w * 0.016);
+		ctx.lineWidth = Math.max(5, w * 0.018);
+		ctx.lineJoin = "round";
+		this.bottlePath(ctx, w, h);
+		ctx.stroke();
+
+		ctx.fillStyle = this.coinWarningActive ? "#f87171" : "#ff9850";
+		ctx.strokeStyle = "#111820";
+		ctx.lineWidth = Math.max(4, w * 0.014);
 		ctx.beginPath();
-		roundedRect(ctx, w * 0.36, h * 0.835, w * 0.28, h * 0.095, h * 0.024);
+		roundedRect(ctx, w * 0.21, h * 0.035, w * 0.58, h * 0.06, h * 0.014);
 		ctx.fill();
 		ctx.stroke();
 
@@ -1991,16 +2120,8 @@ class ShakeOutApp {
 		ctx.strokeStyle = "#111820";
 		ctx.lineWidth = Math.max(4, w * 0.013);
 		ctx.beginPath();
-		ellipsePath(ctx, w * 0.5, h * 0.932, w * 0.17, h * 0.035, 0, 0, Math.PI * 2);
+		roundedRect(ctx, w * 0.36, h * 0.868, w * 0.28, h * 0.08, h * 0.018);
 		ctx.fill();
-		ctx.stroke();
-
-		ctx.strokeStyle = "rgba(17, 24, 32, 0.42)";
-		ctx.lineWidth = Math.max(3, w * 0.01);
-		ctx.lineCap = "round";
-		ctx.beginPath();
-		ctx.moveTo(w * 0.2, h * 0.25);
-		ctx.bezierCurveTo(w * 0.16, h * 0.39, w * 0.18, h * 0.56, w * 0.2, h * 0.68);
 		ctx.stroke();
 		ctx.restore();
 	}
@@ -2008,51 +2129,19 @@ class ShakeOutApp {
 	drawCoin(ctx, w, h, progress, ms) {
 		const coin = this.coinBody;
 		const x = coin ? coin.x * w : w * 0.5;
-		const y = coin ? coin.y * h : lerp(h * 0.2, h * 0.8, easeOut(progress));
+		let y = coin ? coin.y * h : lerp(h * 0.2, h * 0.8, easeOut(progress));
 		const rotation = coin ? coin.rotation : 0;
+		const failT = this.coinFailing ? clamp((ms - this.coinFailing.startMs) / this.coinFailing.durationMs, 0, 1) : 0;
 		let alpha = 1;
 		if (this.coinDropping) {
 			alpha = 0;
 		}
-		this.drawCoinShape(ctx, x, y, Math.min(w, h) * 0.078, rotation, alpha);
-	}
-
-	drawCoinQueue(ctx, w, h, ms) {
-		const remaining = Math.max(0, this.activeRatios.length - this.currentCoinIndex - 1);
-		ctx.save();
-		ctx.globalAlpha = 0.92;
-		ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
-		ctx.strokeStyle = "rgba(24, 33, 43, 0.46)";
-		ctx.lineWidth = Math.max(2, w * 0.007);
-		ctx.beginPath();
-		roundedRect(ctx, w * 0.25, h * 0.12, w * 0.5, h * 0.105, h * 0.03);
-		ctx.fill();
-		ctx.stroke();
-
-		const shown = Math.min(5, remaining + 1);
-		for (let i = 0; i < shown; i++) {
-			const offset = (i - (shown - 1) / 2) * w * 0.075;
-			const r = Math.min(w, h) * (i === 0 ? 0.035 : 0.028);
-			const y = h * 0.17 + Math.sin(ms / 240 + i) * h * 0.004;
-			this.drawCoinShape(ctx, w * 0.5 + offset, y, r, -0.1 + i * 0.08, 0.92 - i * 0.08);
-		}
-
-		ctx.strokeStyle = "rgba(24, 33, 43, 0.42)";
-		ctx.lineWidth = Math.max(3, w * 0.009);
-		ctx.beginPath();
-		ctx.moveTo(w * 0.36, h * 0.235);
-		ctx.quadraticCurveTo(w * 0.5, h * 0.285, w * 0.64, h * 0.235);
-		ctx.stroke();
-		ctx.restore();
-	}
-
-	drawCoinTrail(ctx, w, h, ms) {
-		for (let i = 0; i < this.coinTrail.length; i++) {
-			const trail = this.coinTrail[i];
-			const alpha = clamp(trail.life / trail.maxLife, 0, 1) * 0.24;
-			if (alpha <= 0.01) continue;
-			this.drawCoinShape(ctx, trail.x * w, trail.y * h, Math.min(w, h) * 0.068, trail.rotation, alpha);
-		}
+		y += failT * h * 0.05;
+		const radius = Math.min(w, h) * 0.078 * (1 - failT * 0.36);
+		let variant = "gold";
+		if (failT > 0) variant = "dark";
+		else if (this.coinWarningActive) variant = "warning";
+		this.drawCoinShape(ctx, x, y, radius, rotation, alpha * (1 - failT * 0.72), variant);
 	}
 
 	drawDroppingCoin(ctx, ms) {
@@ -2090,25 +2179,25 @@ class ShakeOutApp {
 		}
 	}
 
-	drawCoinShape(ctx, x, y, r, rotation, alpha = 1) {
+	drawCoinShape(ctx, x, y, r, rotation, alpha = 1, variant = "gold") {
 		ctx.save();
 		ctx.globalAlpha = alpha;
 		ctx.translate(x, y);
 		ctx.rotate(rotation);
 		ctx.scale(1.18, 0.56);
-		ctx.fillStyle = "#ffbf32";
-		ctx.strokeStyle = "#8f6619";
+		ctx.fillStyle = variant === "dark" ? "#202126" : variant === "warning" ? "#ff7a4d" : "#ffbf32";
+		ctx.strokeStyle = variant === "dark" ? "#08090b" : variant === "warning" ? "#9f2f25" : "#8f6619";
 		ctx.lineWidth = Math.max(2.5, r * 0.16);
 		ctx.beginPath();
 		ctx.arc(0, 0, r, 0, Math.PI * 2);
 		ctx.fill();
 		ctx.stroke();
-		ctx.strokeStyle = "rgba(143, 102, 25, 0.55)";
+		ctx.strokeStyle = variant === "dark" ? "rgba(255, 255, 255, 0.18)" : variant === "warning" ? "rgba(159, 47, 37, 0.55)" : "rgba(143, 102, 25, 0.55)";
 		ctx.lineWidth = Math.max(2, r * 0.11);
 		ctx.beginPath();
 		ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
 		ctx.stroke();
-		ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+		ctx.fillStyle = variant === "dark" ? "rgba(255, 255, 255, 0.18)" : "rgba(255, 255, 255, 0.42)";
 		ctx.beginPath();
 		ellipsePath(ctx, -r * 0.24, -r * 0.32, r * 0.34, r * 0.13, -0.25, 0, Math.PI * 2);
 		ctx.fill();
@@ -2117,6 +2206,13 @@ class ShakeOutApp {
 
 	drawSand(ctx, w, h, progress, ms) {
 		const coin = this.coinBody;
+		ctx.save();
+		ctx.globalAlpha = this.coinWarningActive ? 0.34 : 0.24;
+		ctx.fillStyle = this.coinWarningActive ? "#ffd2cd" : "#f8f2de";
+		ctx.beginPath();
+		roundedRect(ctx, w * 0.12, h * 0.12, w * 0.76, h * 0.72, w * 0.08);
+		ctx.fill();
+		ctx.restore();
 		for (let i = 0; i < this.sand.length; i++) {
 			const grain = this.sand[i];
 			const d = coin ? Math.hypot(grain.x - coin.x, grain.y - coin.y) : 1;
@@ -2126,17 +2222,17 @@ class ShakeOutApp {
 			const y = grain.y * h;
 			const r = grain.r * Math.min(w, h) * (1 + brighten * 0.45);
 
-			ctx.save();
-			ctx.globalAlpha = 0.58 + brighten * 0.32;
+			ctx.globalAlpha = 0.62 + brighten * 0.28;
 			ctx.fillStyle = grain.color;
 			ctx.strokeStyle = brighten > 0.2 ? "rgba(255, 255, 255, 0.62)" : "rgba(24, 33, 43, 0.1)";
-			ctx.lineWidth = Math.max(0.8, r * 0.15);
+			ctx.lineWidth = Math.max(0.5, r * 0.12);
 			ctx.beginPath();
-			ctx.arc(x, y, r, 0, Math.PI * 2);
+			if (grain.shape === "square") roundedRect(ctx, x - r, y - r, r * 2, r * 2, r * 0.32);
+			else ctx.arc(x, y, r, 0, Math.PI * 2);
 			ctx.fill();
-			ctx.stroke();
-			ctx.restore();
+			if (brighten > 0.1) ctx.stroke();
 		}
+		ctx.globalAlpha = 1;
 	}
 
 	drawBlockers(ctx, w, h, progress, ms) {
@@ -2155,32 +2251,48 @@ class ShakeOutApp {
 			ctx.globalAlpha = clamp(0.98 - damage * 0.42 + flash, 0.12, 1);
 			ctx.translate(x, y);
 			ctx.rotate(block.angle + loosen * 0.25);
-			ctx.fillStyle = damage > 0.7 ? block.crystal : damage > 0.38 ? "#a77a55" : block.color;
-			ctx.strokeStyle = "#2b2119";
-			ctx.lineWidth = Math.max(2.5, w * 0.009);
+			ctx.fillStyle = damage > 0.72 ? block.crystal : "rgba(255, 255, 255, 0.42)";
+			ctx.strokeStyle = "rgba(17, 24, 32, 0.2)";
+			ctx.lineWidth = Math.max(1.2, w * 0.003);
 			ctx.beginPath();
-			roundedRect(ctx, -bw * 0.5, -bh * 0.5, bw, bh, bh * 0.45);
+			roundedRect(ctx, -bw * 0.5, -bh * 0.56, bw, bh * 1.12, bh * 0.28);
 			ctx.fill();
 			ctx.stroke();
-
-			ctx.strokeStyle = damage > 0.18 ? "rgba(255, 247, 237, 0.86)" : "rgba(255, 247, 237, 0.38)";
-			ctx.lineWidth = Math.max(1.8, w * 0.006);
-			ctx.beginPath();
-			ctx.moveTo(-bw * 0.38, -bh * 0.12);
-			ctx.lineTo(-bw * 0.14, bh * 0.14);
-			ctx.lineTo(bw * 0.07, -bh * 0.2);
-			ctx.lineTo(bw * 0.34, bh * 0.08);
-			ctx.stroke();
-
-			if (damage > 0.48) {
-				ctx.strokeStyle = "rgba(43, 33, 25, 0.72)";
-				ctx.lineWidth = Math.max(1.5, w * 0.005);
+			for (const tile of block.tiles) {
+				const tileSize = clamp(bw * tile.size, 5, bh * 1.05);
+				const tx = tile.dx * bw;
+				const ty = tile.dy * bh;
+				ctx.save();
+				ctx.translate(tx, ty);
+				ctx.rotate((tile.dx + tile.dy) * 0.08);
+				ctx.fillStyle = damage > 0.72 ? block.crystal : tile.color;
+				ctx.strokeStyle = "#111820";
+				ctx.lineWidth = Math.max(1, tileSize * 0.08);
 				ctx.beginPath();
-				ctx.moveTo(-bw * 0.22, -bh * 0.45);
-				ctx.lineTo(-bw * 0.03, -bh * 0.08);
-				ctx.lineTo(-bw * 0.15, bh * 0.42);
-				ctx.moveTo(bw * 0.12, -bh * 0.44);
-				ctx.lineTo(bw * 0.25, bh * 0.36);
+				roundedRect(ctx, -tileSize * 0.5, -tileSize * 0.5, tileSize, tileSize, tileSize * 0.22);
+				ctx.fill();
+				ctx.stroke();
+				if (damage > 0.24) {
+					ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+					ctx.lineWidth = Math.max(1, tileSize * 0.06);
+					ctx.beginPath();
+					ctx.moveTo(-tileSize * 0.25, -tileSize * 0.1);
+					ctx.lineTo(tileSize * 0.04, tileSize * 0.08);
+					ctx.lineTo(tileSize * 0.28, -tileSize * 0.12);
+					ctx.stroke();
+				}
+				ctx.restore();
+			}
+
+			if (damage > 0.52) {
+				ctx.strokeStyle = "rgba(17, 24, 32, 0.45)";
+				ctx.lineWidth = Math.max(1.5, w * 0.004);
+				ctx.beginPath();
+				ctx.moveTo(-bw * 0.28, -bh * 0.28);
+				ctx.lineTo(-bw * 0.04, bh * 0.04);
+				ctx.lineTo(-bw * 0.18, bh * 0.35);
+				ctx.moveTo(bw * 0.12, -bh * 0.34);
+				ctx.lineTo(bw * 0.3, bh * 0.28);
 				ctx.stroke();
 			}
 			ctx.restore();
@@ -2217,24 +2329,6 @@ class ShakeOutApp {
 			}
 			ctx.restore();
 		}
-	}
-
-	drawJarGloss(ctx, w, h) {
-		ctx.save();
-		ctx.globalAlpha = 0.5;
-		ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-		ctx.lineWidth = Math.max(4, w * 0.014);
-		ctx.lineCap = "round";
-		ctx.beginPath();
-		ctx.moveTo(w * 0.75, h * 0.19);
-		ctx.quadraticCurveTo(w * 0.82, h * 0.39, w * 0.75, h * 0.66);
-		ctx.stroke();
-		ctx.globalAlpha = 0.38;
-		ctx.beginPath();
-		ctx.moveTo(w * 0.25, h * 0.18);
-		ctx.quadraticCurveTo(w * 0.18, h * 0.34, w * 0.2, h * 0.59);
-		ctx.stroke();
-		ctx.restore();
 	}
 
 	drawCalibrationCue(ctx, w, h, ms) {

@@ -55,7 +55,7 @@ Edit `config.json`:
 - `schedule.startRatio`, `schedule.growthBase`, `schedule.maxCoins`, and `schedule.explicitRatios`
 - `motion.calibrationSamplesRequired`, `motion.calibrationRankIndex`, and threshold multipliers
 - `motion.baselineDurationMs` and baseline multipliers for still-phone noise rejection
-- `session.idleWarningSeconds`, `session.idleTimeoutSeconds`, and `session.endOnMaxCoins`
+- `session.coinTimeoutBaseSeconds`, `session.coinTimeoutPerFlickSeconds`, `session.coinWarningSeconds`, `session.idleWarningSeconds`, `session.idleTimeoutSeconds`, and `session.endOnMaxCoins`
 - `backend.url` for the once-per-session JSON POST
 
 The default measured schedule is `2, 4, 6, 9, 13, 18, 23` for 7 coins. The demo schedule is `2, 4` and is logged but excluded from primary outcomes.

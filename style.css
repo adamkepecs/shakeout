@@ -137,6 +137,16 @@ button {
 	padding: 12px;
 }
 
+.panel.warning {
+	border-color: rgba(202, 52, 52, 0.55);
+	box-shadow: 0 18px 40px rgba(202, 52, 52, 0.18);
+}
+
+.panel.warning .kicker,
+.panel.warning .statusLine {
+	color: #b84535;
+}
+
 .panel.hidden,
 .hidden {
 	display: none !important;
