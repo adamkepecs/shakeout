@@ -11,54 +11,54 @@ const STORAGE_KEYS = {
 	savedCalibration: "shakeOutSavedCalibration",
 	tutorialComplete: "shakeOutTutorialComplete"
 };
-const ROCK_FAMILIES = [
+const CANDY_FAMILIES = [
 	{
-		name: "lemon",
-		base: "#ffd85a",
-		light: "#fff2a8",
-		dark: "#d59a22",
-		stroke: "#73551b",
-		difficulty: 0.34
+		name: "yellow",
+		base: "#ffd74d",
+		light: "#fff3a8",
+		dark: "#c88918",
+		stroke: "#815a13",
+		difficulty: 0.28
 	},
 	{
-		name: "mint",
-		base: "#55d6a9",
-		light: "#b9f7de",
-		dark: "#239a78",
-		stroke: "#1d5b50",
-		difficulty: 0.44
+		name: "green",
+		base: "#38d39f",
+		light: "#a9f5d8",
+		dark: "#168a68",
+		stroke: "#135846",
+		difficulty: 0.4
 	},
 	{
-		name: "sky",
-		base: "#74b8ff",
-		light: "#c7e4ff",
-		dark: "#3d80d8",
-		stroke: "#244c82",
-		difficulty: 0.58
+		name: "blue",
+		base: "#5ca8ff",
+		light: "#c4e2ff",
+		dark: "#2f73d0",
+		stroke: "#214c86",
+		difficulty: 0.55
 	},
 	{
-		name: "berry",
-		base: "#f17aa8",
-		light: "#ffd0e1",
-		dark: "#c9487e",
-		stroke: "#7b2b51",
-		difficulty: 0.72
+		name: "orange",
+		base: "#ff9a4f",
+		light: "#ffd2ad",
+		dark: "#c95a24",
+		stroke: "#7d361a",
+		difficulty: 0.65
 	},
 	{
-		name: "violet",
+		name: "pink",
+		base: "#f472b6",
+		light: "#ffd1ea",
+		dark: "#be3f87",
+		stroke: "#7b2856",
+		difficulty: 0.78
+	},
+	{
+		name: "purple",
 		base: "#a78bfa",
 		light: "#ddd4ff",
-		dark: "#7357dc",
+		dark: "#7255d8",
 		stroke: "#49358f",
-		difficulty: 0.86
-	},
-	{
-		name: "coral",
-		base: "#ff9970",
-		light: "#ffd3c2",
-		dark: "#d65f40",
-		stroke: "#813626",
-		difficulty: 0.66
+		difficulty: 0.9
 	}
 ];
 
@@ -92,18 +92,6 @@ function formatRatio(n) {
 
 function coinLabel(count) {
 	return `${count} ${count === 1 ? "coin" : "coins"}`;
-}
-
-function makeRockProfile(rand, sides = 9, jitter = 0.16) {
-	const points = [];
-	const offset = rand() * TAU;
-	for (let i = 0; i < sides; i++) {
-		points.push({
-			angle: offset + (i / sides) * TAU + (rand() - 0.5) * 0.12,
-			scale: 1 - jitter * 0.55 + rand() * jitter
-		});
-	}
-	return points;
 }
 
 function percentile(values, q) {
@@ -537,7 +525,7 @@ class ShakeOutApp {
 		this.jarAngle = 0;
 		this.particles = [];
 		this.localEffects = [];
-		this.pebbles = [];
+		this.tiles = [];
 		this.blockers = [];
 		this.brokenBlockers = new Set();
 		this.lastBlockerProgress = 0;
@@ -1014,7 +1002,7 @@ class ShakeOutApp {
 		this.sampleDots.classList.add("hidden");
 		this.kicker.textContent = "Demo";
 		this.title.textContent = "Practice jar";
-		this.body.textContent = "Shake one coin loose from the stuck rocks.";
+		this.body.textContent = "Shake one coin through the candy blocks.";
 		this.primaryButton.classList.add("hidden");
 		this.secondaryButton.classList.add("hidden");
 		this.statusLine.textContent = `Practice with ${this.tutorialRatios.join(", ")} flick coins.`;
@@ -1159,7 +1147,7 @@ class ShakeOutApp {
 		this.coinKickMs = 0;
 		this.coinBody = this.createCoinBody(index, ratio);
 		this.localEffects = [];
-		this.pebbles = this.makePebbles(index, ratio);
+		this.tiles = this.makeCandyTiles(index, ratio);
 		this.blockers = this.makeBlockers(index, ratio);
 		this.brokenBlockers = new Set();
 		this.lastBlockerProgress = 0;
@@ -1178,83 +1166,90 @@ class ShakeOutApp {
 		const rand = seededRandom((index + 11) * 4073 + ratio * 83);
 		return {
 			x: 0.5 + (rand() - 0.5) * 0.05,
-			y: 0.38,
+			y: 0.3,
 			vx: 0,
 			vy: 0,
-			r: 0.055,
+			r: 0.038,
 			rotation: (rand() - 0.5) * 0.4,
 			spin: 0,
 			wakeHue: rand()
 		};
 	}
 
-	makePebbles(index, ratio) {
-		const count = clamp(430 + index * 24 + Math.ceil(ratio * 5.5), 450, 760);
+	makeCandyTiles(index, ratio) {
 		const rand = seededRandom((index + 3) * 1777 + ratio * 3181);
 		const patches = [];
-		const patchCount = 7;
+		const patchCount = 8;
 		for (let i = 0; i < patchCount; i++) {
 			patches.push({
 				x: 0.21 + rand() * 0.58,
-				y: 0.16 + rand() * 0.66,
-				spread: 0.12 + rand() * 0.13,
-				family: ROCK_FAMILIES[(index + i * 2 + Math.floor(rand() * 3)) % ROCK_FAMILIES.length]
+				y: 0.15 + rand() * 0.69,
+				spread: 0.13 + rand() * 0.12,
+				family: CANDY_FAMILIES[(index + i * 2 + Math.floor(rand() * 3)) % CANDY_FAMILIES.length]
 			});
 		}
-		const pebbles = [];
-		for (let i = 0; i < count; i++) {
-			const y = 0.14 + Math.pow(rand(), 0.84) * 0.71;
+		const tiles = [];
+		const cellY = 0.04;
+		const cellX = 0.07;
+		for (let row = 0; row < 18; row++) {
+			const y = 0.145 + row * cellY + (rand() - 0.5) * 0.006;
 			const bounds = this.getBottleInnerBounds(y);
-			const margin = 0.025;
-			const x = bounds.left + margin + rand() * Math.max(0.02, bounds.right - bounds.left - margin * 2);
-			let patch = patches[0];
-			let best = Infinity;
-			for (const candidate of patches) {
-				const dx = (x - candidate.x) / candidate.spread;
-				const dy = (y - candidate.y) / (candidate.spread * 0.86);
-				const score = dx * dx + dy * dy + rand() * 0.32;
-				if (score < best) {
-					best = score;
-					patch = candidate;
+			const usable = bounds.right - bounds.left - 0.05;
+			const cols = Math.max(3, Math.floor(usable / cellX));
+			const start = (bounds.left + bounds.right) * 0.5 - ((cols - 1) * cellX) * 0.5;
+			for (let col = 0; col < cols; col++) {
+				if (rand() < 0.055) continue;
+				const x = start + col * cellX + (rand() - 0.5) * 0.008;
+				let patch = patches[0];
+				let best = Infinity;
+				for (const candidate of patches) {
+					const dx = (x - candidate.x) / candidate.spread;
+					const dy = (y - candidate.y) / (candidate.spread * 0.86);
+					const score = dx * dx + dy * dy + rand() * 0.22;
+					if (score < best) {
+						best = score;
+						patch = candidate;
+					}
 				}
+				const family = rand() < 0.82 ? patch.family : CANDY_FAMILIES[Math.floor(rand() * CANDY_FAMILIES.length)];
+				const size = 0.054 + rand() * 0.008;
+				tiles.push({
+					x,
+					y,
+					row,
+					col,
+					size,
+					hw: size * 0.5,
+					hh: size * 0.28,
+					family,
+					color: rand() < 0.74 ? family.base : family.light,
+					dark: family.dark,
+					stroke: family.stroke,
+					phase: rand() * TAU,
+					angle: 0
+				});
 			}
-			const family = rand() < 0.78 ? patch.family : ROCK_FAMILIES[Math.floor(rand() * ROCK_FAMILIES.length)];
-			const radius = 0.013 + rand() * 0.013;
-			pebbles.push({
-				x,
-				y,
-				r: radius,
-				rx: radius * (0.9 + rand() * 0.34),
-				ry: radius * (0.44 + rand() * 0.18),
-				family,
-				color: rand() < 0.72 ? family.base : family.light,
-				dark: family.dark,
-				stroke: family.stroke,
-				phase: rand() * TAU,
-				angle: (rand() - 0.5) * 0.72,
-				profile: makeRockProfile(rand, 7 + Math.floor(rand() * 4), 0.2)
-			});
 		}
-		pebbles.sort((a, b) => a.y - b.y);
-		return pebbles;
+		tiles.sort((a, b) => a.y - b.y);
+		return tiles;
 	}
 
 	makeBlockers(index, ratio) {
-		const count = clamp(2 + Math.ceil(ratio / 2.8) + Math.floor(index / 2), 3, 14);
+		const count = clamp(2 + Math.ceil(ratio / 2.6) + Math.floor(index / 2), 3, 16);
 		const rand = seededRandom((index + 5) * 2203 + ratio * 4441);
 		const blockers = [];
 		const clusterCount = clamp(2 + Math.floor(ratio / 8), 2, 4);
 		const clusters = [];
 		for (let i = 0; i < clusterCount; i++) {
 			const familyIndex = clamp(
-				Math.floor(rand() * ROCK_FAMILIES.length + index * 0.4 + i * 1.3),
+				Math.floor(rand() * CANDY_FAMILIES.length + index * 0.4 + i * 1.3),
 				0,
-				ROCK_FAMILIES.length - 1
+				CANDY_FAMILIES.length - 1
 			);
 			clusters.push({
 				x: 0.5 + (rand() - 0.5) * 0.2,
-				y: 0.33 + (i / Math.max(1, clusterCount - 1)) * 0.42 + (rand() - 0.5) * 0.08,
-				family: ROCK_FAMILIES[familyIndex]
+				y: 0.28 + (i / Math.max(1, clusterCount - 1)) * 0.47 + (rand() - 0.5) * 0.08,
+				family: CANDY_FAMILIES[familyIndex]
 			});
 		}
 		for (let i = 0; i < count; i++) {
@@ -1262,23 +1257,23 @@ class ShakeOutApp {
 			const cluster = clusters[i % clusters.length];
 			const family = cluster.family;
 			const basePathX = 0.5 + Math.sin(t * Math.PI * 2.2 + index * 0.7) * (0.08 + index * 0.004);
-			const y = 0.33 + t * 0.48 + (rand() - 0.5) * 0.045;
+			const y = 0.28 + t * 0.54 + (rand() - 0.5) * 0.038;
 			const bounds = this.getBottleInnerBounds(y);
-			const x = clamp(lerp(basePathX, cluster.x, 0.34) + (rand() - 0.5) * 0.12, bounds.left + 0.08, bounds.right - 0.08);
-			const rx = clamp(0.038 + rand() * 0.034 + family.difficulty * 0.012 + index * 0.002, 0.04, 0.086);
-			const ry = rx * (0.44 + rand() * 0.18);
+			const x = clamp(lerp(basePathX, cluster.x, 0.34) + (rand() - 0.5) * 0.11, bounds.left + 0.075, bounds.right - 0.075);
+			const size = clamp(0.065 + rand() * 0.018 + family.difficulty * 0.008 + index * 0.0015, 0.066, 0.092);
 			const localOrder = (i + 1) / (count + 1);
 			const difficultyDelay = (family.difficulty - 0.5) * 0.12;
-			const breakAt = clamp(0.14 + localOrder * 0.76 + difficultyDelay, 0.18, 0.96);
+			const breakAt = clamp(0.12 + localOrder * 0.78 + difficultyDelay, 0.16, 0.96);
 			blockers.push({
 				id: `${index}-${i}`,
 				x,
 				y,
-				rx,
-				ry,
-				w: rx * 2,
-				h: ry * 2,
-				angle: (rand() - 0.5) * 0.72,
+				size,
+				hw: size * 0.5,
+				hh: size * 0.28,
+				w: size,
+				h: size * 0.56,
+				angle: 0,
 				breakAt,
 				family,
 				color: family.base,
@@ -1287,8 +1282,7 @@ class ShakeOutApp {
 				stroke: family.stroke,
 				crystal: family.light,
 				difficulty: family.difficulty,
-				cracks: rand(),
-				profile: makeRockProfile(rand, 8 + Math.floor(rand() * 4), 0.23)
+				cracks: rand()
 			});
 		}
 		blockers.sort((a, b) => a.y - b.y);
@@ -1359,15 +1353,15 @@ class ShakeOutApp {
 	applyFlickImpulse(result, progress) {
 		if (!this.coinBody) return;
 		const coin = this.coinBody;
-		const amplitudeScale = clamp((result.angularVelocity || result.amplitude || 80) / Math.max(1, result.threshold || 80), 0.9, 1.45);
+		const amplitudeScale = clamp((result.angularVelocity || result.amplitude || 80) / Math.max(1, result.threshold || 80), 0.95, 1.5);
 		const alternatingSide = this.validInRatio % 2 === 0 ? -1 : 1;
 		const pathNudge = coin.x < 0.5 ? 1 : -1;
-		const impulseY = 0.62 + progress * 0.16;
-		const impulseX = (0.14 * alternatingSide + 0.08 * pathNudge) * amplitudeScale;
+		const impulseY = 0.94 + progress * 0.22;
+		const impulseX = (0.22 * alternatingSide + 0.12 * pathNudge) * amplitudeScale;
 		coin.vx += impulseX;
 		coin.vy += impulseY;
-		coin.spin += impulseX * 2.6 + alternatingSide * 0.18;
-		this.addCoinStream(coin.x, coin.y, 12, progress);
+		coin.spin += impulseX * 4.1 + alternatingSide * 0.28;
+		this.addCoinStream(coin.x, coin.y, 18, progress);
 	}
 
 	getBlockerDamage(block, progress) {
@@ -1384,14 +1378,14 @@ class ShakeOutApp {
 				this.brokenBlockers.add(block.id);
 				this.feedbackBreak();
 				this.addBreakBurst(block);
-				this.logEvent("rock_break", {
+				this.logEvent("candy_crush", {
 					currentCoin: this.currentCoinIndex + 1,
 					currentRatio: this.currentRatio,
 					breakAtProgress: block.breakAt,
 					progressTowardCurrentCoin: progress,
 					blockerId: block.id,
-					rockColor: block.family ? block.family.name : "",
-					rockDifficulty: block.difficulty || 0
+					candyColor: block.family ? block.family.name : "",
+					candyDifficulty: block.difficulty || 0
 				});
 			}
 		}
@@ -1450,7 +1444,7 @@ class ShakeOutApp {
 		}
 		this.resetCoin(nextIndex, this.activeRatios[nextIndex]);
 		this.title.textContent = this.isMeasured ? "Keep shaking" : "Practice jar";
-		this.body.textContent = "A new coin is trapped in the rocks.";
+		this.body.textContent = "A new coin is trapped in the candy blocks.";
 		this.statusLine.textContent = this.isMeasured ? "Shake to drop the coin." : "Keep practicing.";
 		this.logEvent("coin_ready", {
 			currentCoin: this.currentCoinIndex + 1,
@@ -1890,7 +1884,7 @@ class ShakeOutApp {
 		this.classifier.setMode("idle");
 		this.panel.classList.add("warning");
 		this.title.textContent = "Time";
-		this.body.textContent = "The coin gets buried back in the rocks.";
+		this.body.textContent = "The coin gets covered by candy blocks.";
 		this.statusLine.textContent = "Trial ended.";
 		this.feedbackCoinFail();
 		if (this.coinBody) {
@@ -1910,14 +1904,14 @@ class ShakeOutApp {
 		if (!this.coinBody || this.coinDropping || this.coinFailing || this.ended || this.screen !== "playing") return;
 		const coin = this.coinBody;
 		const progress = this.currentRatio ? clamp(this.validInRatio / this.currentRatio, 0, 1) : 0;
-		const stepCount = 2;
+		const stepCount = 3;
 		const step = dt / stepCount;
 		for (let i = 0; i < stepCount; i++) {
-			coin.vy += 0.28 * step;
-			const drag = Math.pow(0.08, step);
+			coin.vy += 0.34 * step;
+			const drag = Math.pow(0.22, step);
 			coin.vx *= drag;
-			coin.vy *= Math.pow(0.1, step);
-			coin.spin *= Math.pow(0.18, step);
+			coin.vy *= Math.pow(0.24, step);
+			coin.spin *= Math.pow(0.32, step);
 			coin.x += coin.vx * step;
 			coin.y += coin.vy * step;
 			coin.rotation += coin.spin * step;
@@ -1956,43 +1950,35 @@ class ShakeOutApp {
 	resolveCoinBlockers(coin, progress, ms) {
 		for (const block of this.blockers) {
 			if (!this.isBlockerSolid(block, progress)) continue;
-			const cos = Math.cos(-block.angle);
-			const sin = Math.sin(-block.angle);
 			const dx = coin.x - block.x;
 			const dy = coin.y - block.y;
-			const lx = dx * cos - dy * sin;
-			const ly = dx * sin + dy * cos;
-			const rx = block.rx + coin.r * 0.82;
-			const ry = block.ry + coin.r * 0.82;
-			const norm = (lx / rx) ** 2 + (ly / ry) ** 2;
-			if (norm >= 1) continue;
+			const halfW = block.hw + coin.r * 0.82;
+			const halfH = block.hh + coin.r * 0.82;
+			if (Math.abs(dx) > halfW || Math.abs(dy) > halfH) continue;
 
-			const angle = Math.atan2(ly / Math.max(0.001, ry), lx / Math.max(0.001, rx));
-			const targetX = Math.cos(angle) * rx;
-			const targetY = Math.sin(angle) * ry;
-			const pushX = targetX - lx;
-			const pushY = targetY - ly;
-			const wx = pushX * cos + pushY * sin;
-			const wy = -pushX * sin + pushY * cos;
-			coin.x += wx * 0.82;
-			coin.y += wy * 0.82;
-			const nLen = Math.hypot(wx, wy) || 1;
-			const nx = wx / nLen;
-			const ny = wy / nLen;
-			const dot = coin.vx * nx + coin.vy * ny;
-			if (dot < 0) {
-				coin.vx -= dot * nx * 1.35;
-				coin.vy -= dot * ny * 1.35;
+			const overlapX = halfW - Math.abs(dx);
+			const overlapY = halfH - Math.abs(dy);
+			let nx = 0;
+			let ny = 0;
+			if (overlapX < overlapY) {
+				nx = dx >= 0 ? 1 : -1;
+				coin.x += nx * overlapX * 0.9;
+				coin.vx = Math.abs(coin.vx) * nx * (0.62 + block.difficulty * 0.18);
+				coin.vy *= 0.72;
 			}
-			coin.vx *= 0.64;
-			coin.vy *= 0.58;
-			coin.spin += (coin.vx - coin.vy) * (0.7 + block.difficulty * 0.35);
+			else {
+				ny = dy >= 0 ? 1 : -1;
+				coin.y += ny * overlapY * 0.9;
+				coin.vy = Math.abs(coin.vy) * ny * (0.58 + block.difficulty * 0.16);
+				coin.vx *= 0.78;
+			}
+			coin.spin += (coin.vx - coin.vy) * (0.8 + block.difficulty * 0.5);
 			if (ms - (block.lastDustMs || 0) > 90) {
 				block.lastDustMs = ms;
 				this.addLocalDust(
-					block.x + nx * block.rx * 0.65,
-					block.y + ny * block.ry * 0.65,
-					4,
+					block.x + nx * block.hw * 0.8,
+					block.y + ny * block.hh * 0.8,
+					5,
 					block.light || block.color
 				);
 			}
@@ -2156,7 +2142,7 @@ class ShakeOutApp {
 			ctx.save();
 			this.bottlePath(ctx, jar.w, jar.h);
 			ctx.clip();
-			this.drawPebbles(ctx, jar.w, jar.h, progress, ms);
+			this.drawCandyTiles(ctx, jar.w, jar.h, progress, ms);
 			this.drawBlockers(ctx, jar.w, jar.h, progress, ms);
 			this.drawLocalEffects(ctx, jar.w, jar.h);
 			this.drawCoin(ctx, jar.w, jar.h, progress, ms);
@@ -2231,7 +2217,7 @@ class ShakeOutApp {
 			alpha = 0;
 		}
 		y += failT * h * 0.05;
-		const radius = Math.min(w, h) * 0.078 * (1 - failT * 0.36);
+		const radius = Math.min(w, h) * 0.052 * (1 - failT * 0.36);
 		let variant = "gold";
 		if (failT > 0) variant = "dark";
 		else if (this.coinWarningActive) variant = "warning";
@@ -2248,7 +2234,7 @@ class ShakeOutApp {
 		const x = lerp(from.x, to.x, e) + Math.sin(t * Math.PI * 3) * 12;
 		const y = lerp(from.y, to.y, e) - arc;
 		const scale = lerp(0.54, to.scale, e);
-		this.drawCoinShape(ctx, x, y, 33 * scale, this.coinDropping.spin * t, 1);
+		this.drawCoinShape(ctx, x, y, 28 * scale, this.coinDropping.spin * t, 1);
 	}
 
 	drawCollectedCoins(ctx, ms) {
@@ -2269,7 +2255,7 @@ class ShakeOutApp {
 				alpha = 1 - e;
 			}
 			if (alpha <= 0.02) continue;
-			this.drawCoinShape(ctx, x, y, 33 * scale, coin.rotation, alpha);
+			this.drawCoinShape(ctx, x, y, 28 * scale, coin.rotation, alpha);
 		}
 	}
 
@@ -2303,74 +2289,63 @@ class ShakeOutApp {
 		ctx.restore();
 	}
 
-	drawRockShape(ctx, rock, x, y, rx, ry, options = {}) {
+	drawCandySquare(ctx, tile, x, y, size, options = {}) {
 		const damage = options.damage || 0;
 		const alpha = options.alpha == null ? 1 : options.alpha;
-		const fill = options.fill || rock.color;
-		const stroke = options.stroke || rock.stroke || "#111820";
-		const profile = rock.profile || makeRockProfile(() => 0.5, 9, 0.1);
+		const fill = options.fill || tile.color;
+		const stroke = options.stroke || tile.stroke || "#111820";
+		const radius = Math.max(3, size * 0.16);
 
 		ctx.save();
 		ctx.globalAlpha = alpha;
 		ctx.translate(x, y);
-		ctx.rotate(rock.angle || 0);
+		ctx.rotate(tile.angle || 0);
 		ctx.fillStyle = fill;
 		ctx.strokeStyle = stroke;
-		ctx.lineWidth = Math.max(1.6, Math.min(rx, ry) * 0.14);
+		ctx.lineWidth = Math.max(1.6, size * 0.08);
 		ctx.lineJoin = "round";
 		ctx.beginPath();
-		for (let i = 0; i < profile.length; i++) {
-			const point = profile[i];
-			const px = Math.cos(point.angle) * rx * point.scale;
-			const py = Math.sin(point.angle) * ry * point.scale;
-			if (i === 0) ctx.moveTo(px, py);
-			else ctx.lineTo(px, py);
-		}
-		ctx.closePath();
+		roundedRect(ctx, -size * 0.5, -size * 0.5, size, size, radius);
 		ctx.fill();
 		ctx.stroke();
 
-		ctx.globalAlpha = alpha * 0.45;
-		ctx.strokeStyle = options.markColor || "rgba(255, 255, 255, 0.72)";
-		ctx.lineWidth = Math.max(1, Math.min(rx, ry) * 0.06);
+		ctx.globalAlpha = alpha * 0.3;
+		ctx.fillStyle = tile.light || "rgba(255, 255, 255, 0.8)";
 		ctx.beginPath();
-		ctx.moveTo(-rx * 0.34, -ry * 0.12);
-		ctx.quadraticCurveTo(-rx * 0.05, -ry * 0.32, rx * 0.22, -ry * 0.16);
-		ctx.stroke();
+		roundedRect(ctx, -size * 0.31, -size * 0.31, size * 0.62, size * 0.2, radius * 0.62);
+		ctx.fill();
 
 		if (damage > 0.18) {
 			ctx.globalAlpha = alpha * clamp(0.35 + damage * 0.55, 0, 0.9);
 			ctx.strokeStyle = options.crackColor || "rgba(17, 24, 32, 0.62)";
-			ctx.lineWidth = Math.max(1.1, Math.min(rx, ry) * 0.06);
+			ctx.lineWidth = Math.max(1.1, size * 0.055);
 			ctx.beginPath();
-			ctx.moveTo(-rx * 0.24, -ry * 0.2);
-			ctx.lineTo(-rx * 0.04, ry * 0.02);
-			ctx.lineTo(-rx * 0.16, ry * 0.32);
+			ctx.moveTo(-size * 0.24, -size * 0.22);
+			ctx.lineTo(-size * 0.03, size * 0.01);
+			ctx.lineTo(-size * 0.18, size * 0.3);
 			if (damage > 0.52) {
-				ctx.moveTo(rx * 0.12, -ry * 0.28);
-				ctx.lineTo(rx * 0.28, ry * 0.2);
+				ctx.moveTo(size * 0.11, -size * 0.3);
+				ctx.lineTo(size * 0.28, size * 0.22);
 			}
 			ctx.stroke();
 		}
 		ctx.restore();
 	}
 
-	drawPebbles(ctx, w, h, progress, ms) {
+	drawCandyTiles(ctx, w, h, progress, ms) {
 		const coin = this.coinBody;
-		for (let i = 0; i < this.pebbles.length; i++) {
-			const rock = this.pebbles[i];
-			const d = coin ? Math.hypot(rock.x - coin.x, rock.y - coin.y) : 1;
-			const nearCoin = d < 0.16;
-			const brighten = nearCoin ? clamp(1 - d / 0.16, 0, 1) : 0;
-			const x = rock.x * w;
-			const y = rock.y * h;
-			const rx = rock.rx * w * (1 + brighten * 0.08);
-			const ry = rock.ry * h * (1 + brighten * 0.08);
-			this.drawRockShape(ctx, rock, x, y, rx, ry, {
-				alpha: 0.9,
-				fill: brighten > 0.45 ? rock.family.light : rock.color,
-				stroke: rock.stroke,
-				markColor: "rgba(255, 255, 255, 0.55)"
+		for (let i = 0; i < this.tiles.length; i++) {
+			const tile = this.tiles[i];
+			const d = coin ? Math.hypot(tile.x - coin.x, tile.y - coin.y) : 1;
+			const nearCoin = d < 0.11;
+			const brighten = nearCoin ? clamp(1 - d / 0.11, 0, 1) : 0;
+			const x = tile.x * w;
+			const y = tile.y * h;
+			const size = tile.size * w * (1 + brighten * 0.06);
+			this.drawCandySquare(ctx, tile, x, y, size, {
+				alpha: 0.94,
+				fill: brighten > 0.45 ? tile.family.light : tile.color,
+				stroke: tile.stroke
 			});
 		}
 	}
@@ -2383,14 +2358,13 @@ class ShakeOutApp {
 			const loosen = easeOut(damage);
 			const x = block.x * w;
 			const y = block.y * h;
-			const rx = block.rx * w * (1 - loosen * 0.18);
-			const ry = block.ry * h * (1 - loosen * 0.16);
+			const size = block.size * w * (1 - loosen * 0.2);
 			const flash = damage > 0.68 ? 0.2 + Math.sin(ms / 48 + i) * 0.1 : 0;
 			const fill = damage > 0.72 ? block.light : damage > 0.42 ? block.crystal : block.color;
-			this.drawRockShape(ctx, {
+			this.drawCandySquare(ctx, {
 				...block,
-				angle: block.angle + loosen * 0.32
-			}, x, y, rx, ry, {
+				angle: block.angle + loosen * 0.18
+			}, x, y, size, {
 				alpha: clamp(1 - damage * 0.52 + flash, 0.16, 1),
 				fill,
 				stroke: block.stroke,
@@ -2417,10 +2391,7 @@ class ShakeOutApp {
 			if (effect.type === "shard") {
 				ctx.rotate(effect.angle || 0);
 				ctx.beginPath();
-				ctx.moveTo(0, -r);
-				ctx.lineTo(r * 0.85, r * 0.65);
-				ctx.lineTo(-r * 0.75, r * 0.55);
-				ctx.closePath();
+				roundedRect(ctx, -r * 0.75, -r * 0.75, r * 1.5, r * 1.5, r * 0.28);
 				ctx.fill();
 				ctx.stroke();
 			}
