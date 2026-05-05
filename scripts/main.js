@@ -517,6 +517,7 @@ class ShakeOutApp {
 		this.postStatus = "not_sent";
 		this.coinDropping = null;
 		this.coinFailing = null;
+		this.pendingCoinDrop = null;
 		this.coinBody = null;
 		this.collectedCoins = [];
 		this.countAnimation = null;
@@ -745,6 +746,8 @@ class ShakeOutApp {
 				else this.useDemoInput();
 				break;
 			case "calibration_intro":
+			case "calibration_baseline":
+			case "calibration_collect":
 				this.useDemoInput();
 				break;
 			case "ended":
@@ -1082,6 +1085,7 @@ class ShakeOutApp {
 		this.ended = false;
 		this.coinDropping = null;
 		this.coinFailing = null;
+		this.pendingCoinDrop = null;
 		this.countAnimation = null;
 		this.collectedCoins = [];
 		this.completedRatios = [];
@@ -1144,11 +1148,13 @@ class ShakeOutApp {
 		this.validInRatio = 0;
 		this.coinDropping = null;
 		this.coinFailing = null;
+		this.pendingCoinDrop = null;
 		this.coinKickMs = 0;
 		this.coinBody = this.createCoinBody(index, ratio);
 		this.localEffects = [];
 		this.tiles = this.makeCandyTiles(index, ratio);
 		this.blockers = this.makeBlockers(index, ratio);
+		this.clearTilesForBlockers();
 		this.brokenBlockers = new Set();
 		this.lastBlockerProgress = 0;
 		this.coinStartMs = performance.now();
@@ -1163,13 +1169,14 @@ class ShakeOutApp {
 	}
 
 	createCoinBody(index, ratio) {
+		const start = this.getCrushPathPoint(0, index);
 		const rand = seededRandom((index + 11) * 4073 + ratio * 83);
 		return {
-			x: 0.5 + (rand() - 0.5) * 0.05,
-			y: 0.3,
+			x: start.x,
+			y: start.y,
 			vx: 0,
 			vy: 0,
-			r: 0.038,
+			r: 0.033,
 			rotation: (rand() - 0.5) * 0.4,
 			spin: 0,
 			wakeHue: rand()
@@ -1189,8 +1196,8 @@ class ShakeOutApp {
 			});
 		}
 		const tiles = [];
-		const cellY = 0.04;
-		const cellX = 0.07;
+		const cellY = 0.046;
+		const cellX = 0.064;
 		for (let row = 0; row < 18; row++) {
 			const y = 0.145 + row * cellY + (rand() - 0.5) * 0.006;
 			const bounds = this.getBottleInnerBounds(y);
@@ -1212,7 +1219,7 @@ class ShakeOutApp {
 					}
 				}
 				const family = rand() < 0.82 ? patch.family : CANDY_FAMILIES[Math.floor(rand() * CANDY_FAMILIES.length)];
-				const size = 0.054 + rand() * 0.008;
+				const size = 0.052 + rand() * 0.008;
 				tiles.push({
 					x,
 					y,
@@ -1220,7 +1227,7 @@ class ShakeOutApp {
 					col,
 					size,
 					hw: size * 0.5,
-					hh: size * 0.28,
+					hh: size * 0.5,
 					family,
 					color: rand() < 0.74 ? family.base : family.light,
 					dark: family.dark,
@@ -1235,46 +1242,26 @@ class ShakeOutApp {
 	}
 
 	makeBlockers(index, ratio) {
-		const count = clamp(2 + Math.ceil(ratio / 2.6) + Math.floor(index / 2), 3, 16);
+		const count = Math.max(1, Math.round(ratio));
 		const rand = seededRandom((index + 5) * 2203 + ratio * 4441);
 		const blockers = [];
-		const clusterCount = clamp(2 + Math.floor(ratio / 8), 2, 4);
-		const clusters = [];
-		for (let i = 0; i < clusterCount; i++) {
-			const familyIndex = clamp(
-				Math.floor(rand() * CANDY_FAMILIES.length + index * 0.4 + i * 1.3),
-				0,
-				CANDY_FAMILIES.length - 1
-			);
-			clusters.push({
-				x: 0.5 + (rand() - 0.5) * 0.2,
-				y: 0.28 + (i / Math.max(1, clusterCount - 1)) * 0.47 + (rand() - 0.5) * 0.08,
-				family: CANDY_FAMILIES[familyIndex]
-			});
-		}
 		for (let i = 0; i < count; i++) {
-			const t = count === 1 ? 0.5 : i / (count - 1);
-			const cluster = clusters[i % clusters.length];
-			const family = cluster.family;
-			const basePathX = 0.5 + Math.sin(t * Math.PI * 2.2 + index * 0.7) * (0.08 + index * 0.004);
-			const y = 0.28 + t * 0.54 + (rand() - 0.5) * 0.038;
-			const bounds = this.getBottleInnerBounds(y);
-			const x = clamp(lerp(basePathX, cluster.x, 0.34) + (rand() - 0.5) * 0.11, bounds.left + 0.075, bounds.right - 0.075);
-			const size = clamp(0.065 + rand() * 0.018 + family.difficulty * 0.008 + index * 0.0015, 0.066, 0.092);
-			const localOrder = (i + 1) / (count + 1);
-			const difficultyDelay = (family.difficulty - 0.5) * 0.12;
-			const breakAt = clamp(0.12 + localOrder * 0.78 + difficultyDelay, 0.16, 0.96);
+			const progress = (i + 1) / count;
+			const point = this.getCrushPathPoint(progress, index);
+			const familyIndex = clamp(Math.floor(progress * CANDY_FAMILIES.length + (rand() - 0.5) * 1.4), 0, CANDY_FAMILIES.length - 1);
+			const family = CANDY_FAMILIES[familyIndex];
+			const size = 0.056;
 			blockers.push({
 				id: `${index}-${i}`,
-				x,
-				y,
+				x: point.x,
+				y: point.y,
 				size,
 				hw: size * 0.5,
-				hh: size * 0.28,
+				hh: size * 0.5,
 				w: size,
-				h: size * 0.56,
+				h: size,
 				angle: 0,
-				breakAt,
+				breakAt: progress,
 				family,
 				color: family.base,
 				light: family.light,
@@ -1289,8 +1276,34 @@ class ShakeOutApp {
 		return blockers;
 	}
 
+	clearTilesForBlockers() {
+		if (!this.blockers.length) return;
+		const pathSamples = [];
+		for (let i = 0; i <= 28; i++) {
+			pathSamples.push(this.getCrushPathPoint(i / 28, this.currentCoinIndex));
+		}
+		this.tiles = this.tiles.filter(tile => {
+			const underBlocker = this.blockers.some(block => {
+				return Math.abs(tile.x - block.x) < block.hw * 1.08 && Math.abs(tile.y - block.y) < block.hh * 1.08;
+			});
+			if (underBlocker) return false;
+			return !pathSamples.some(point => {
+				return Math.abs(tile.x - point.x) < tile.hw * 0.9 && Math.abs(tile.y - point.y) < tile.hh * 0.9;
+			});
+		});
+	}
+
+	getCrushPathPoint(progress, index = this.currentCoinIndex || 0) {
+		const p = clamp(progress, 0, 1);
+		const y = lerp(0.24, 0.83, easeInOut(p));
+		const bounds = this.getBottleInnerBounds(y);
+		const wiggle = Math.sin(p * Math.PI * 2.35 + index * 0.82) * (0.095 - p * 0.03);
+		const x = clamp(0.5 + wiggle, bounds.left + 0.08, bounds.right - 0.08);
+		return { x, y };
+	}
+
 	onValidFlick(result) {
-		if (this.screen !== "playing" || this.coinDropping || this.coinFailing || this.ended) return;
+		if (this.screen !== "playing" || this.coinDropping || this.coinFailing || this.pendingCoinDrop || this.ended) return;
 		const now = performance.now();
 		const interFlickIntervalMs = this.previousValidFlickMs ? now - this.previousValidFlickMs : null;
 		this.previousValidFlickMs = now;
@@ -1302,9 +1315,9 @@ class ShakeOutApp {
 
 		const progress = clamp(this.validInRatio / this.currentRatio, 0, 1);
 		this.coinKickMs = now;
-		this.applyFlickImpulse(result, progress);
+		const crushedBlocks = this.triggerBlockerBreaks(oldProgress, progress);
+		this.applyFlickImpulse(result, progress, crushedBlocks);
 		this.feedbackValid();
-		this.triggerBlockerBreaks(oldProgress, progress);
 		this.logEvent("valid_flick", {
 			currentCoin: this.currentCoinIndex + 1,
 			currentRatio: this.currentRatio,
@@ -1323,7 +1336,7 @@ class ShakeOutApp {
 			usedFallback: result.features.usedFallback
 		});
 
-		if (this.validInRatio >= this.currentRatio) this.dropCoin(result);
+		if (this.validInRatio >= this.currentRatio && this.isExitPathOpen()) this.queueCoinDrop(result);
 		this.updateHud();
 	}
 
@@ -1350,18 +1363,47 @@ class ShakeOutApp {
 		});
 	}
 
-	applyFlickImpulse(result, progress) {
+	applyFlickImpulse(result, progress, crushedBlocks = []) {
 		if (!this.coinBody) return;
 		const coin = this.coinBody;
 		const amplitudeScale = clamp((result.angularVelocity || result.amplitude || 80) / Math.max(1, result.threshold || 80), 0.95, 1.5);
 		const alternatingSide = this.validInRatio % 2 === 0 ? -1 : 1;
-		const pathNudge = coin.x < 0.5 ? 1 : -1;
-		const impulseY = 0.94 + progress * 0.22;
-		const impulseX = (0.22 * alternatingSide + 0.12 * pathNudge) * amplitudeScale;
-		coin.vx += impulseX;
-		coin.vy += impulseY;
+		const target = crushedBlocks.length ? crushedBlocks[crushedBlocks.length - 1] : this.getCrushPathPoint(progress);
+		coin.target = {
+			x: target.x,
+			y: target.y,
+			untilMs: performance.now() + 520
+		};
+		const pathNudge = target.x - coin.x;
+		const impulseX = (pathNudge * 12.8 + 0.34 * alternatingSide) * amplitudeScale;
+		const impulseY = Math.max(0.95, (target.y - coin.y) * 13.6 + 0.82) * amplitudeScale;
+		coin.vx = coin.vx * 0.28 + impulseX;
+		coin.vy = coin.vy * 0.28 + impulseY;
 		coin.spin += impulseX * 4.1 + alternatingSide * 0.28;
 		this.addCoinStream(coin.x, coin.y, 18, progress);
+	}
+
+	isExitPathOpen() {
+		return this.blockers.every(block => this.brokenBlockers.has(block.id));
+	}
+
+	queueCoinDrop(result) {
+		if (this.pendingCoinDrop || this.coinDropping || !this.isExitPathOpen()) return;
+		const now = performance.now();
+		if (this.coinBody) {
+			this.coinBody.target = {
+				x: 0.5,
+				y: 0.855,
+				untilMs: now + 360
+			};
+			this.coinBody.vx += (0.5 - this.coinBody.x) * 8.5;
+			this.coinBody.vy += Math.max(0.65, (0.855 - this.coinBody.y) * 8.8);
+			this.coinBody.spin += 1.8;
+		}
+		this.pendingCoinDrop = {
+			dueMs: now + 270,
+			result
+		};
 	}
 
 	getBlockerDamage(block, progress) {
@@ -1373,9 +1415,12 @@ class ShakeOutApp {
 	}
 
 	triggerBlockerBreaks(oldProgress, progress) {
+		const crushedBlocks = [];
 		for (const block of this.blockers) {
 			if (oldProgress < block.breakAt && progress >= block.breakAt && !this.brokenBlockers.has(block.id)) {
 				this.brokenBlockers.add(block.id);
+				block.crushedAtMs = performance.now();
+				crushedBlocks.push(block);
 				this.feedbackBreak();
 				this.addBreakBurst(block);
 				this.logEvent("candy_crush", {
@@ -1390,10 +1435,12 @@ class ShakeOutApp {
 			}
 		}
 		this.lastBlockerProgress = progress;
+		return crushedBlocks;
 	}
 
 	dropCoin(result) {
 		const now = performance.now();
+		this.pendingCoinDrop = null;
 		if (this.isMeasured) this.completedRatios.push(this.currentRatio);
 		if (this.coinBody) {
 			this.coinBody.x = 0.5;
@@ -1515,6 +1562,7 @@ class ShakeOutApp {
 			});
 			this.coinDropping = null;
 		}
+		this.pendingCoinDrop = null;
 		this.ended = true;
 		this.screen = "ended";
 		this.phase = "ended";
@@ -1560,7 +1608,7 @@ class ShakeOutApp {
 	}
 
 	getUnfinishedProgressForEnd() {
-		if (this.coinDropping && this.validInRatio >= this.currentRatio) {
+		if ((this.coinDropping || this.pendingCoinDrop) && this.validInRatio >= this.currentRatio) {
 			const nextIndex = this.currentCoinIndex + 1;
 			return {
 				ratio: this.activeRatios[nextIndex] || 0,
@@ -1835,6 +1883,11 @@ class ShakeOutApp {
 		this.checkCoinTimer(ms);
 		this.updateCoinPhysics(dt, ms);
 		this.updateLocalEffects(dt);
+		if (this.pendingCoinDrop && !this.coinDropping && !this.coinFailing && ms >= this.pendingCoinDrop.dueMs) {
+			const pending = this.pendingCoinDrop;
+			this.pendingCoinDrop = null;
+			this.dropCoin(pending.result);
+		}
 		for (const particle of this.particles) {
 			particle.life -= dt;
 			particle.x += particle.vx * dt;
@@ -1857,7 +1910,7 @@ class ShakeOutApp {
 	}
 
 	checkCoinTimer(ms) {
-		if (!this.isMeasured || this.ended || this.screen !== "playing" || this.coinDropping || this.coinFailing) return;
+		if (!this.isMeasured || this.ended || this.screen !== "playing" || this.coinDropping || this.coinFailing || this.pendingCoinDrop) return;
 		if (!this.coinDeadlineMs) return;
 		if (!this.coinWarningActive && ms >= this.coinWarningMs) {
 			this.coinWarningActive = true;
@@ -1907,11 +1960,18 @@ class ShakeOutApp {
 		const stepCount = 3;
 		const step = dt / stepCount;
 		for (let i = 0; i < stepCount; i++) {
+			if (coin.target && ms <= coin.target.untilMs) {
+				coin.vx += (coin.target.x - coin.x) * 9.8 * step;
+				coin.vy += (coin.target.y - coin.y) * 10.6 * step;
+			}
+			else {
+				coin.target = null;
+			}
 			coin.vy += 0.34 * step;
-			const drag = Math.pow(0.22, step);
+			const drag = Math.pow(0.28, step);
 			coin.vx *= drag;
-			coin.vy *= Math.pow(0.24, step);
-			coin.spin *= Math.pow(0.32, step);
+			coin.vy *= Math.pow(0.3, step);
+			coin.spin *= Math.pow(0.4, step);
 			coin.x += coin.vx * step;
 			coin.y += coin.vy * step;
 			coin.rotation += coin.spin * step;
@@ -1982,8 +2042,9 @@ class ShakeOutApp {
 					block.light || block.color
 				);
 			}
-			if (progress >= block.breakAt - 0.035 && !this.brokenBlockers.has(block.id)) {
+			if (progress >= block.breakAt && !this.brokenBlockers.has(block.id)) {
 				this.brokenBlockers.add(block.id);
+				block.crushedAtMs = performance.now();
 				this.feedbackBreak();
 				this.addBreakBurst(block);
 			}
@@ -2142,10 +2203,8 @@ class ShakeOutApp {
 			ctx.save();
 			this.bottlePath(ctx, jar.w, jar.h);
 			ctx.clip();
-			this.drawCandyTiles(ctx, jar.w, jar.h, progress, ms);
-			this.drawBlockers(ctx, jar.w, jar.h, progress, ms);
+			this.drawCandyField(ctx, jar.w, jar.h, progress, ms);
 			this.drawLocalEffects(ctx, jar.w, jar.h);
-			this.drawCoin(ctx, jar.w, jar.h, progress, ms);
 			ctx.restore();
 		}
 		this.drawJarRim(ctx, jar.w, jar.h);
@@ -2217,7 +2276,7 @@ class ShakeOutApp {
 			alpha = 0;
 		}
 		y += failT * h * 0.05;
-		const radius = Math.min(w, h) * 0.052 * (1 - failT * 0.36);
+		const radius = (coin ? coin.r * w : Math.min(w, h) * 0.052) * (1 - failT * 0.36);
 		let variant = "gold";
 		if (failT > 0) variant = "dark";
 		else if (this.coinWarningActive) variant = "warning";
@@ -2332,44 +2391,55 @@ class ShakeOutApp {
 		ctx.restore();
 	}
 
-	drawCandyTiles(ctx, w, h, progress, ms) {
-		const coin = this.coinBody;
-		for (let i = 0; i < this.tiles.length; i++) {
-			const tile = this.tiles[i];
-			const d = coin ? Math.hypot(tile.x - coin.x, tile.y - coin.y) : 1;
-			const nearCoin = d < 0.11;
-			const brighten = nearCoin ? clamp(1 - d / 0.11, 0, 1) : 0;
-			const x = tile.x * w;
-			const y = tile.y * h;
-			const size = tile.size * w * (1 + brighten * 0.06);
-			this.drawCandySquare(ctx, tile, x, y, size, {
-				alpha: 0.94,
-				fill: brighten > 0.45 ? tile.family.light : tile.color,
-				stroke: tile.stroke
+	drawCandyField(ctx, w, h, progress, ms) {
+		const pieces = this.tiles.map(tile => ({ type: "tile", y: tile.y, piece: tile }));
+		if (this.coinBody && !this.coinDropping) {
+			pieces.push({
+				type: "coin",
+				y: this.coinBody.y,
+				piece: this.coinBody
 			});
 		}
-	}
-
-	drawBlockers(ctx, w, h, progress, ms) {
-		for (let i = this.blockers.length - 1; i >= 0; i--) {
-			const block = this.blockers[i];
+		for (const block of this.blockers) {
+			const crushedAge = block.crushedAtMs ? ms - block.crushedAtMs : Infinity;
+			const crushT = clamp(crushedAge / 220, 0, 1);
 			const damage = this.brokenBlockers.has(block.id) ? 1 : this.getBlockerDamage(block, progress);
-			if (damage >= 0.995) continue;
+			if (damage < 0.995 || crushT < 1) pieces.push({ type: "blocker", y: block.y, piece: block, damage, crushT });
+		}
+		pieces.sort((a, b) => a.y - b.y || (a.type === "coin" ? 1 : 0) - (b.type === "coin" ? 1 : 0));
+		for (const item of pieces) {
+			if (item.type === "tile") {
+				const tile = item.piece;
+				const x = tile.x * w;
+				const y = tile.y * h;
+				this.drawCandySquare(ctx, tile, x, y, tile.size * w, {
+					alpha: 0.94,
+					fill: tile.color,
+					stroke: tile.stroke
+				});
+				continue;
+			}
+			if (item.type === "coin") {
+				this.drawCoin(ctx, w, h, progress, ms);
+				continue;
+			}
+			const block = item.piece;
+			const damage = item.damage;
+			const crushT = item.crushT || 0;
 			const loosen = easeOut(damage);
 			const x = block.x * w;
 			const y = block.y * h;
-			const size = block.size * w * (1 - loosen * 0.2);
-			const flash = damage > 0.68 ? 0.2 + Math.sin(ms / 48 + i) * 0.1 : 0;
+			const size = block.size * w * (1 - loosen * 0.08 - crushT * 0.36);
+			const flash = damage > 0.68 ? 0.22 + Math.sin(ms / 42) * 0.1 : 0;
 			const fill = damage > 0.72 ? block.light : damage > 0.42 ? block.crystal : block.color;
 			this.drawCandySquare(ctx, {
 				...block,
-				angle: block.angle + loosen * 0.18
+				angle: block.angle + loosen * 0.08 + crushT * 0.18
 			}, x, y, size, {
-				alpha: clamp(1 - damage * 0.52 + flash, 0.16, 1),
+				alpha: clamp(1 - damage * 0.28 - crushT * 0.82 + flash, 0, 1),
 				fill,
 				stroke: block.stroke,
 				damage,
-				markColor: "rgba(255, 255, 255, 0.72)",
 				crackColor: "rgba(17, 24, 32, 0.72)"
 			});
 		}

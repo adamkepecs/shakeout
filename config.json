@@ -1,7 +1,7 @@
 {
-	"appVersion": "0.1.8",
+	"appVersion": "0.1.11",
 	"calibrationVersion": "baseline-guided-upright-v3",
-	"theme": "flat-candy-crush-squares-v7",
+	"theme": "single-plane-candy-crush-path-v10",
 	"participantIdParamNames": ["participantId", "subjectId", "pid"],
 	"schedule": {
 		"startRatio": 2,
