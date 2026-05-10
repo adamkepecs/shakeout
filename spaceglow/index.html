@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Space Glow</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas id="gameCanvas" aria-label="Space Glow game canvas"></canvas>
+
+    <header class="hud" id="hud" hidden>
+      <div>
+        <span class="hud-label">Time</span>
+        <strong id="hudTime">02:00</strong>
+      </div>
+      <div>
+        <span class="hud-label">Score</span>
+        <strong id="hudScore">0</strong>
+      </div>
+      <div>
+        <span class="hud-label">Streak</span>
+        <strong id="hudStreak">0</strong>
+      </div>
+    </header>
+
+    <main class="screen" id="startScreen">
+      <section class="screen-content">
+        <p class="eyebrow">Austere MVP</p>
+        <h1>Space Glow</h1>
+        <p class="lede">Time the release. Catch the next glow. Let the rhythm settle.</p>
+        <button class="primary-button" id="startButton" type="button">
+          <span aria-hidden="true">◇</span>
+          Begin practice
+        </button>
+      </section>
+    </main>
+
+    <main class="screen subtle" id="practiceScreen" hidden>
+      <section class="screen-content compact">
+        <p class="eyebrow">Practice</p>
+        <h2><span id="practiceHits">0</span>/3 catches</h2>
+        <p class="lede">Tap when the orbiting glow points toward the target.</p>
+      </section>
+    </main>
+
+    <main class="screen" id="endScreen" hidden>
+      <section class="screen-content">
+        <p class="eyebrow">Session complete</p>
+        <h1 id="endScore">Score: 0</h1>
+        <dl class="results">
+          <div>
+            <dt>Best streak</dt>
+            <dd id="endBestStreak">0</dd>
+          </div>
+          <div>
+            <dt>Accuracy</dt>
+            <dd id="endAccuracy">0%</dd>
+          </div>
+          <div>
+            <dt>Timing stability</dt>
+            <dd id="endStability">--</dd>
+          </div>
+          <div>
+            <dt>Return to rhythm</dt>
+            <dd id="endRecovery">--</dd>
+          </div>
+        </dl>
+        <div class="actions">
+          <button class="primary-button" id="restartButton" type="button">
+            <span aria-hidden="true">↻</span>
+            Play again
+          </button>
+          <button class="secondary-button" id="downloadButton" type="button">
+            <span aria-hidden="true">↓</span>
+            Download session data
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <pre class="debug-panel" id="debugPanel" hidden></pre>
+    <script type="module" src="./dist/web-main.js"></script>
+  </body>
+</html>
